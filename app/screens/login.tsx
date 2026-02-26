@@ -6,10 +6,14 @@ import supabase from '@/app/lib/supabaseClient';
 import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash } from 'react-icons/fa';
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
+import AdminLoginScreen from './adminLogin';
+import { FaUserShield } from 'react-icons/fa';
 
 const LoginScreen = () => {
   const [isSignup, setIsSignup] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+
   
   // New States for Auth
   const [email, setEmail] = useState('');
@@ -32,16 +36,35 @@ const LoginScreen = () => {
       // This will catch "Invalid login credentials" or "Email not confirmed"
       setError(authError.message);
       setLoading(false);
-    } else {
-      // Success!
-      setIsLoggedIn(true);
-      setLoading(false);
+    } else if (data.user) {
+      // Check if user is an admin (should not be in regular user login)
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileData?.role === 'admin') {
+        // Admin trying to log in via user path, reject them
+        await supabase.auth.signOut();
+        setError('Admins must use the admin login portal');
+        setLoading(false);
+      } else {
+        // Regular user, allow login
+        setIsLoggedIn(true);
+        setLoading(false);
+      }
     }
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
   };
+
+  if (isAdminMode) {
+    // show admin login / dashboard flow
+    return <AdminLoginScreen onBack={() => setIsAdminMode(false)} />;
+  }
 
   if (isLoggedIn) {
     return <UserDashboard onLogout={handleLogout} />;
@@ -63,7 +86,14 @@ const LoginScreen = () => {
             </div>
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">Sign in</h1>
+          <div className="flex justify-between items-center mb-2">
+            <h1 className="text-3xl font-bold text-slate-900">Sign in</h1>
+            <FaUserShield
+              className="text-xl text-gray-500 cursor-pointer hover:text-gray-700"
+              title="Admin login"
+              onClick={() => setIsAdminMode(true)}
+            />
+          </div>
           <p className="text-gray-400 text-sm mb-6">
             If you don't have an account register <br />
             You can <span className="text-blue-600 font-bold cursor-pointer hover:underline" onClick={() => setIsSignup(true)}>Register here !</span>
