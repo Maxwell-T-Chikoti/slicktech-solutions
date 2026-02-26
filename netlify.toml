@@ -2,9 +2,8 @@
   command = "npm run build"
   publish = ".next"
 
-[env]
-  NEXT_PUBLIC_SUPABASE_URL = "true"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY = "true"
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
 [functions]
   node_bundler = "esbuild"
@@ -13,7 +12,3 @@
   for = "/_next/static/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-# Omit Supabase public keys from secrets scanning since they're meant to be public
-[build]
-  environment = { SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY" }
