@@ -24,6 +24,16 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Define gradient classes for each service
+  const gradients: { [key: number]: string } = {
+    1: 'bg-gradient-to-br from-blue-400 to-blue-600',
+    2: 'bg-gradient-to-br from-purple-400 to-purple-600',
+    3: 'bg-gradient-to-br from-red-400 to-red-600',
+    4: 'bg-gradient-to-br from-green-400 to-green-600',
+    5: 'bg-gradient-to-br from-yellow-400 to-yellow-600',
+    6: 'bg-gradient-to-br from-pink-400 to-pink-600',
+  };
+
   useEffect(() => {
     const fetchServices = async () => {
       const { data, error } = await supabase
@@ -64,11 +74,11 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {services.map((service) => (
               <div key={service.id} className="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                <div className={`h-48 ${service.image || 'bg-gray-300'} flex items-center justify-center text-white text-center p-4`}>
+                <div className={`h-48 ${gradients[service.id] || 'bg-gray-400'} flex items-center justify-center text-white text-center p-4`}>
                   {service.id !== 3 ? (
                     <span className="font-bold text-lg">{service.title}</span>
                   ) : (
-                    <span className="font-bold text-6xl text-red-600">EMERGENCY</span>
+                    <span className="font-bold text-6xl text-red-900">EMERGENCY</span>
                   )}
                 </div>
                 <div className="p-6">
