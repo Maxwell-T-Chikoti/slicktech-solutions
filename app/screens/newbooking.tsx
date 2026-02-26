@@ -25,6 +25,11 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const [services, setServices] = useState<string[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
+  
+  // Date picker state
+  const [currentDate] = useState(new Date());
+  const [displayMonth, setDisplayMonth] = useState(currentDate.getMonth());
+  const [displayYear, setDisplayYear] = useState(currentDate.getFullYear());
 
   // fetch services from database
   React.useEffect(() => {
@@ -56,6 +61,42 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
       ...bookingData,
       date: date
     });
+  };
+
+  const handlePreviousMonth = () => {
+    if (displayMonth === 0) {
+      setDisplayMonth(11);
+      setDisplayYear(displayYear - 1);
+    } else {
+      setDisplayMonth(displayMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (displayMonth === 11) {
+      setDisplayMonth(0);
+      setDisplayYear(displayYear + 1);
+    } else {
+      setDisplayMonth(displayMonth + 1);
+    }
+  };
+
+  const getDaysInMonth = (month: number, year: number) => {
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (month: number, year: number) => {
+    return new Date(year, month, 1).getDay();
+  };
+
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+
+  const isDatePassed = (month: number, day: number, year: number) => {
+    const selectedDate = new Date(year, month, day);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return selectedDate < today;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -311,11 +352,11 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                   <div className="bg-white rounded-lg p-4 border border-gray-300">
                     {/* Simple date picker */}
                     <div className="flex items-center justify-between mb-4">
-                      <button type="button" className="text-gray-600 hover:text-slate-900">
+                      <button type="button" onClick={handlePreviousMonth} className="text-gray-600 hover:text-slate-900">
                         <FaChevronLeft />
                       </button>
-                      <span className="text-sm font-semibold text-slate-900">April 2026</span>
-                      <button type="button" className="text-gray-600 hover:text-slate-900">
+                      <span className="text-sm font-semibold text-slate-900">{monthNames[displayMonth]} {displayYear}</span>
+                      <button type="button" onClick={handleNextMonth} className="text-gray-600 hover:text-slate-900">
                         <FaChevronRight />
                       </button>
                     </div>
@@ -327,20 +368,30 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                           {day}
                         </div>
                       ))}
-                      {Array.from({ length: 30 }).map((_, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => handleDateChange(`April ${i + 1}, 2026`)}
-                          className={`text-center text-sm py-2 rounded ${
-                            bookingData.date === `April ${i + 1}, 2026`
-                              ? 'bg-blue-700 text-white font-bold'
-                              : 'hover:bg-gray-100'
-                          }`}
-                        >
-                          {i + 1}
-                        </button>
+                      {Array.from({ length: getFirstDayOfMonth(displayMonth, displayYear) }).map((_, i) => (
+                        <div key={`empty-${i}`} className="text-center text-sm py-2"></div>
                       ))}
+                      {Array.from({ length: getDaysInMonth(displayMonth, displayYear) }).map((_, i) => {
+                        const dateStr = `${monthNames[displayMonth]} ${i + 1}, ${displayYear}`;
+                        const isPassed = isDatePassed(displayMonth, i + 1, displayYear);
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => !isPassed && handleDateChange(dateStr)}
+                            disabled={isPassed}
+                            className={`text-center text-sm py-2 rounded text-gray-900 font-medium ${
+                              bookingData.date === dateStr
+                                ? 'bg-blue-700 text-white font-bold'
+                                : isPassed
+                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                                : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            {i + 1}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {/* Time Selection */}
