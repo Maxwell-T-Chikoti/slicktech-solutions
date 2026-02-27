@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import supabase from '@/app/lib/supabaseClient';
+import Image from 'next/image';
+import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
 
-import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash } from 'react-icons/fa';
+import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye } from 'react-icons/fa';
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
 import AdminLoginScreen from './adminLogin';
@@ -20,6 +22,7 @@ const LoginScreen = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,10 +83,13 @@ const LoginScreen = () => {
         <div className="w-full max-w-md">
           
           <div className="flex justify-center mb-10">
-            <div className="w-28 h-28 bg-gray-200 rounded-full flex flex-col items-center justify-center text-center p-4 shadow-inner">
-               <div className="font-bold text-slate-800 text-sm leading-tight">SlickTech</div>
-               <div className="text-[8px] uppercase tracking-widest text-slate-500">Solutions</div>
-            </div>
+            <Image
+              src={SlickTechLogo}
+              alt="SlickTech Logo"
+              width={160}
+              height={160}
+              className="rounded-full shadow-lg object-cover"
+            />
           </div>
 
           <div className="flex justify-between items-center mb-2">
@@ -129,14 +135,20 @@ const LoginScreen = () => {
               <div className="flex items-center">
                 <FaLock className="text-slate-800 mr-3 text-sm" />
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your Password" 
                   className="w-full outline-none text-sm text-slate-700 placeholder-gray-300"
                 />
-                <FaEyeSlash className="text-gray-400 cursor-pointer" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-slate-800 cursor-pointer hover:text-blue-600 transition-colors"
+                >
+                  {showPassword ? <FaEye className="text-sm" /> : <FaEyeSlash className="text-sm" />}
+                </button>
               </div>
             </div>
 
@@ -171,8 +183,14 @@ const LoginScreen = () => {
       {/* RIGHT SIDE: Visual Panel */}
       <div className="hidden lg:flex w-1/2 bg-[#050A44] relative overflow-hidden rounded-l-[60px] items-center justify-center">
         <div className="relative z-10 w-3/4">
-          <div className="w-full h-64 bg-white/10 rounded-3xl flex items-center justify-center text-white italic">
-            Illustration Placeholder
+          <div className="w-full h-64 bg-white rounded-3xl flex items-center justify-center">
+            <Image
+              src={SlickTechLogo}
+              alt="SlickTech Logo"
+              width={200}
+              height={200}
+              className="object-contain"
+            />
           </div>
         </div>
         <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>

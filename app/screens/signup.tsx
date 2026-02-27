@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import supabase from '@/app/lib/supabaseClient';
+import Image from 'next/image';
+import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
 
 import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaUser, FaLock, FaPhone, FaMapMarkerAlt } from 'react-icons/fa';
 
@@ -80,6 +82,15 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
     <div className="flex min-h-screen bg-white">
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-12 overflow-y-auto">
         <div className="w-full max-w-md py-10">
+          <div className="flex justify-center mb-10">
+            <Image
+              src={SlickTechLogo}
+              alt="SlickTech Logo"
+              width={160}
+              height={160}
+              className="rounded-full shadow-lg object-cover"
+            />
+          </div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2 text-center lg:text-left">Create Account</h1>
           <p className="text-gray-400 text-sm mb-8 text-center lg:text-left">
             Already have an account? <span className="text-blue-600 font-bold cursor-pointer hover:underline" onClick={onToggle}>Login here!</span>
@@ -94,13 +105,13 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">First Name</label>
                 <div className="flex items-center">
                   <FaUser className="text-slate-800 mr-3 text-sm" />
-                  <input name="firstName" type="text" value={formData.firstName} onChange={handleChange} placeholder="John" className="w-full outline-none text-sm" required />
+                  <input name="firstName" type="text" value={formData.firstName} onChange={handleChange} placeholder="John" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
                 </div>
               </div>
               <div className="flex-1 border-b border-gray-200 pb-2">
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Surname</label>
                 <div className="flex items-center">
-                  <input name="surname" type="text" value={formData.surname} onChange={handleChange} placeholder="Doe" className="w-full outline-none text-sm" required />
+                  <input name="surname" type="text" value={formData.surname} onChange={handleChange} placeholder="Doe" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
                 </div>
               </div>
             </div>
@@ -110,7 +121,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Email</label>
               <div className="flex items-center">
                 <FaEnvelope className="text-slate-800 mr-3 text-sm" />
-                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" className="w-full outline-none text-sm" required />
+                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
               </div>
             </div>
 
@@ -120,14 +131,14 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Phone</label>
                 <div className="flex items-center">
                   <FaPhone className="text-slate-800 mr-3 text-sm" />
-                  <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="+123..." className="w-full outline-none text-sm" required />
+                  <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="+123..." className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
                 </div>
               </div>
               <div className="flex-1 border-b border-gray-200 pb-2">
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Location</label>
                 <div className="flex items-center">
                   <FaMapMarkerAlt className="text-slate-800 mr-3 text-sm" />
-                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="City, Country" className="w-full outline-none text-sm" required />
+                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="City, Country" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
                 </div>
               </div>
             </div>
@@ -137,7 +148,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Password</label>
               <div className="flex items-center">
                 <FaLock className="text-slate-800 mr-3 text-sm" />
-                <input name="password" type="password" value={formData.password} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm" required />
+                <input name="password" type="password" value={formData.password} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
               </div>
             </div>
 
@@ -145,7 +156,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
               <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Confirm Password</label>
               <div className="flex items-center">
                 <FaLock className="text-slate-800 mr-3 text-sm" />
-                <input name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm" required />
+                <input name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
               </div>
             </div>
 
@@ -155,8 +166,20 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
           </form>
         </div>
       </div>
-      <div className="hidden lg:flex w-1/2 bg-[#050A44] relative rounded-l-[60px] items-center justify-center">
-        <div className="text-white text-xl opacity-20">Illustration Space</div>
+      <div className="hidden lg:flex w-1/2 bg-[#050A44] relative overflow-hidden rounded-l-[60px] items-center justify-center">
+        <div className="relative z-10 w-3/4">
+          <div className="w-full h-64 bg-white rounded-3xl flex items-center justify-center">
+            <Image
+              src={SlickTechLogo}
+              alt="SlickTech Logo"
+              width={200}
+              height={200}
+              className="object-contain"
+            />
+          </div>
+        </div>
+        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
       </div>
     </div>
   );

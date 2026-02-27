@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import supabase from '@/app/lib/supabaseClient';
+import Image from 'next/image';
+import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
 import AdminDashboard from './adminDashboard';
 import { FaArrowLeft } from 'react-icons/fa';
 
@@ -117,11 +119,17 @@ const AdminLoginScreen = ({ onBack }: AdminLoginProps) => {
         </div>
       </div>
 
-      {/* RIGHT SIDE: Visual Panel (copied from login screen) */}
+      {/* RIGHT SIDE: Visual Panel */}
       <div className="hidden lg:flex w-1/2 bg-[#050A44] relative overflow-hidden rounded-l-[60px] items-center justify-center">
         <div className="relative z-10 w-3/4">
-          <div className="w-full h-64 bg-white/10 rounded-3xl flex items-center justify-center text-white italic">
-            Illustration Placeholder
+          <div className="w-full h-64 bg-white rounded-3xl flex items-center justify-center">
+            <Image
+              src={SlickTechLogo}
+              alt="SlickTech Logo"
+              width={250}
+              height={250}
+              className="object-contain"
+            />
           </div>
         </div>
         <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>

@@ -10,7 +10,7 @@ const LandingPage = () => {
     // Start the 8-second timer
     const timer = setTimeout(() => {
       setShouldRedirect(true);
-    }, 8000);
+    }, 2000);
 
     // Cleanup timer if the component unmounts
     return () => clearTimeout(timer);
