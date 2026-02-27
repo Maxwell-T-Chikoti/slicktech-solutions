@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
-import { FaCheck, FaTimes, FaEye } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEye, FaSync } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 
 interface AdminDashboardProps {
@@ -205,12 +205,21 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   <h1 className="text-4xl font-bold text-slate-900">Admin Dashboard</h1>
                   <p className="text-slate-600 text-sm mt-2">Manage bookings and view metrics</p>
                 </div>
-                <button
-                  onClick={onLogout}
-                  className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-8 rounded-xl transition-all backdrop-blur-md border border-white/20 hover:border-white/40"
-                >
-                  Logout
-                </button>
+                <div className="flex items-center space-x-4">
+                  <button
+                    onClick={fetchBookingsWithProfiles}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-semibold p-2 rounded-full transition-all"
+                    title="Refresh data"
+                  >
+                    <FaSync />
+                  </button>
+                  <button
+                    onClick={onLogout}
+                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-8 rounded-xl transition-all backdrop-blur-md border border-white/20 hover:border-white/40"
+                  >
+                    Logout
+                  </button>
+                </div>
               </div>
             </div>
 

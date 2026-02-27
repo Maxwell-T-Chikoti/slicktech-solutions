@@ -137,6 +137,32 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         alert('There was an error saving your booking. Please try again.');
       } else {
         console.log('Booking inserted:', data);
+        
+        // Send confirmation email
+        if (user) {
+          try {
+            await fetch('/api/send-booking-confirmation', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userEmail: user.email,
+                userName: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+                service: bookingData.service,
+                date: bookingData.date,
+                time: bookingData.time,
+                description: bookingData.description,
+                extraServices: bookingData.extraServices,
+                bookingId: data?.[0]?.id || 'Pending',
+              }),
+            });
+          } catch (emailError) {
+            console.error('Error sending confirmation email:', emailError);
+            // Don't fail the booking if email fails
+          }
+        }
+        
         setBookingConfirmed(true);
         // navigate to bookings page immediately so the new record is visible
         onNavigate('bookings');
