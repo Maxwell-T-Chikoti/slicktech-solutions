@@ -154,15 +154,16 @@ export async function POST(request: NextRequest) {
     `;
 
     // Send email using Resend
-    const data = await resend.emails.send({
+    const result = await resend.emails.send({
       from: 'SlickTech Solutions <onboarding@resend.dev>',
       to: userEmail,
       subject: `Booking Confirmation - ${service}`,
       html: htmlContent,
     });
 
+    // `result` may wrap the response inside a `data` property according to types
     return NextResponse.json(
-      { success: true, messageId: data.id },
+      { success: true, messageId: (result as any).data?.id ?? null },
       { status: 200 }
     );
   } catch (error) {

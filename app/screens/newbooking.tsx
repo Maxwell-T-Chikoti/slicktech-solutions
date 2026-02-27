@@ -154,7 +154,8 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                 time: bookingData.time,
                 description: bookingData.description,
                 extraServices: bookingData.extraServices,
-                bookingId: data?.[0]?.id || 'Pending',
+                // Supabase insert returns an array of rows; cast to any to satisfy TypeScript
+                bookingId: (data as any)?.[0]?.id || 'Pending',
               }),
             });
           } catch (emailError) {
