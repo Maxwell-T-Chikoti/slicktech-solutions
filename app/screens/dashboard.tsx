@@ -139,8 +139,8 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
                 <span className="w-2 h-7 bg-blue-600 rounded-full"></span> Upcoming Appointments
               </h2>
               <div className="space-y-4">
-                {bookings.filter(b => new Date(b.date) >= new Date().setHours(0,0,0,0) && b.status === 'Confirmed').length > 0 ? (
-                  bookings.filter(b => new Date(b.date) >= new Date().setHours(0,0,0,0) && b.status === 'Confirmed').slice(0, 3).map((b) => (
+                {bookings.filter(b => new Date(b.date).getTime() >= new Date().setHours(0,0,0,0) && b.status === 'Confirmed').length > 0 ? (
+                  bookings.filter(b => new Date(b.date).getTime() >= new Date().setHours(0,0,0,0) && b.status === 'Confirmed').slice(0, 3).map((b) => (
                     <div key={b.id} className="group flex flex-col sm:flex-row items-center justify-between p-6 bg-slate-50 border border-slate-200 rounded-2xl hover:border-blue-400 hover:bg-white transition-all gap-4">
                       <div className="flex items-center gap-5">
                         <div className="w-14 h-14 rounded-xl bg-white flex items-center justify-center text-blue-600 font-black text-xl border border-slate-200 shadow-sm">
