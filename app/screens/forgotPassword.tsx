@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
 import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
@@ -11,9 +11,21 @@ const ForgotPasswordScreen = ({ onBack }: { onBack: () => void }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (rateLimited) {
+      setRateLimited(false);
+    }
+  }, [countdown, rateLimited]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (rateLimited) return;
     setLoading(true);
     setError(null);
 
@@ -22,7 +34,13 @@ const ForgotPasswordScreen = ({ onBack }: { onBack: () => void }) => {
     });
 
     if (resetError) {
-      setError(resetError.message);
+      if (resetError.message.toLowerCase().includes('rate limit')) {
+        setRateLimited(true);
+        setCountdown(60); // 60 seconds cooldown
+        setError('Too many requests. Please wait 1 minute before trying again.');
+      } else {
+        setError(resetError.message);
+      }
       setLoading(false);
     } else {
       setSuccess(true);
@@ -102,10 +120,10 @@ const ForgotPasswordScreen = ({ onBack }: { onBack: () => void }) => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || rateLimited}
                 className="w-full bg-[#050A44] hover:bg-slate-800 text-white py-4 rounded-full font-bold text-sm shadow-xl shadow-blue-100 transition-all uppercase tracking-widest disabled:opacity-70"
               >
-                {loading ? "Sending..." : "Send Reset Link"}
+                {loading ? "Sending..." : rateLimited ? `Wait ${countdown}s` : "Send Reset Link"}
               </button>
             </form>
           )}
