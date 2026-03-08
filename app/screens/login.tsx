@@ -9,12 +9,14 @@ import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye }
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
 import AdminLoginScreen from './adminLogin';
+import ForgotPasswordScreen from './forgotPassword';
 import { FaUserShield } from 'react-icons/fa';
 
 const LoginScreen = () => {
   const [isSignup, setIsSignup] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
 
   
   // New States for Auth
@@ -63,6 +65,10 @@ const LoginScreen = () => {
   const handleLogout = () => {
     setIsLoggedIn(false);
   };
+
+  if (isForgotPassword) {
+    return <ForgotPasswordScreen onBack={() => setIsForgotPassword(false)} />;
+  }
 
   if (isAdminMode) {
     // show admin login / dashboard flow
@@ -157,7 +163,12 @@ const LoginScreen = () => {
                 <input type="checkbox" className="mr-2 accent-slate-800" />
                 Remember me
               </label>
-              <span className="cursor-pointer hover:text-slate-800 transition-colors">Forgot Password ?</span>
+              <span 
+                onClick={() => setIsForgotPassword(true)}
+                className="cursor-pointer hover:text-slate-800 transition-colors"
+              >
+                Forgot Password ?
+              </span>
             </div>
 
             <button 
