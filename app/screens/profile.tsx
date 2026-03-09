@@ -12,6 +12,7 @@ interface ProfileScreenProps {
 
 const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [profileData, setProfileData] = useState<any>({
     firstName: "",
     lastName: "",
@@ -46,6 +47,10 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
           setFormData(normalized);
         }
       }
+      // Show loading animation for at least 1 second
+      setTimeout(() => {
+        setLoading(false);
+      }, 1000);
     };
     loadProfile();
   }, []);
@@ -87,6 +92,132 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
     setFormData(profileData);
     setIsEditing(false);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Navigation Skeleton */}
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="px-4 md:px-8 py-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="w-48 h-8 bg-gray-200 rounded animate-pulse mb-2"></div>
+            <div className="w-80 h-5 bg-gray-200 rounded animate-pulse mb-8"></div>
+
+            {/* Profile Card Skeleton */}
+            <div className="bg-white rounded-lg shadow-md p-8 mb-8">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 pb-6 border-b border-gray-200">
+                <div className="flex items-center space-x-6">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full animate-pulse"></div>
+                  <div>
+                    <div className="w-32 h-6 bg-gray-200 rounded animate-pulse mb-2"></div>
+                    <div className="w-48 h-4 bg-gray-200 rounded animate-pulse"></div>
+                  </div>
+                </div>
+                <div className="w-24 h-10 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+
+              {/* Form Fields Skeleton */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i}>
+                    <div className="w-20 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                    <div className="w-full h-10 bg-gray-200 rounded animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bio Skeleton */}
+              <div className="mt-6">
+                <div className="w-12 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="w-full h-24 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+
+              {/* Buttons Skeleton */}
+              <div className="flex justify-end space-x-4 mt-8">
+                <div className="w-20 h-10 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-10 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            {/* Password Section Skeleton */}
+            <div className="bg-white rounded-lg shadow-md p-8">
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse mb-6"></div>
+              <div className="space-y-4">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i}>
+                    <div className="w-24 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                    <div className="w-full h-10 bg-gray-200 rounded animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
+              <div className="w-28 h-10 bg-gray-200 rounded animate-pulse mt-6"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Skeleton */}
+        <footer className="bg-gray-200 px-4 md:px-8 py-8 mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <div className="w-10 h-10 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-5 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+              <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-16 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-14 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-18 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-24 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-28 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="flex space-x-4">
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-300 pt-4 flex flex-col md:flex-row items-center justify-between">
+            <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            <div className="w-56 h-3 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

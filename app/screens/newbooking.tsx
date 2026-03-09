@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
 import { FaFacebook, FaTwitter, FaInstagram, FaLinkedin, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
@@ -22,6 +22,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const [isLoading, setIsLoading] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [services, setServices] = useState<string[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
@@ -43,6 +44,10 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         setServices(data.map((s: any) => s.title));
       }
       setLoadingServices(false);
+      // Show loading animation for at least 1 second
+      setTimeout(() => {
+        setLoading(false);
+      }, 1000);
     };
     fetch();
   }, []);
@@ -201,6 +206,142 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
             <p className="text-gray-600">Please wait while we confirm your appointment</p>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Navigation Skeleton */}
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="px-4 md:px-8 py-8">
+          <div className="max-w-6xl mx-auto">
+            <div className="w-48 h-8 bg-gray-200 rounded animate-pulse mb-8"></div>
+
+            {/* Form Skeleton */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Left Column */}
+              <div className="space-y-6">
+                <div>
+                  <div className="w-48 h-5 bg-gray-200 rounded animate-pulse mb-3"></div>
+                  <div className="w-full h-12 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-32 h-5 bg-gray-200 rounded animate-pulse mb-3"></div>
+                  <div className="w-full h-12 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-24 h-5 bg-gray-200 rounded animate-pulse mb-3"></div>
+                  <div className="w-full h-12 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+              </div>
+
+              {/* Right Column */}
+              <div className="space-y-6">
+                <div>
+                  <div className="w-40 h-5 bg-gray-200 rounded animate-pulse mb-3"></div>
+                  <div className="w-full h-12 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-36 h-5 bg-gray-200 rounded animate-pulse mb-3"></div>
+                  <div className="w-full h-24 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+
+            {/* Calendar Skeleton */}
+            <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="grid grid-cols-7 gap-2 mb-4">
+                {[...Array(7)].map((_, i) => (
+                  <div key={i} className="w-8 h-6 bg-gray-200 rounded animate-pulse"></div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {[...Array(35)].map((_, i) => (
+                  <div key={i} className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+                ))}
+              </div>
+            </div>
+
+            {/* Time Slots Skeleton */}
+            <div className="mt-8">
+              <div className="w-28 h-6 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="w-full h-12 bg-gray-200 rounded animate-pulse"></div>
+                ))}
+              </div>
+            </div>
+
+            {/* Submit Button Skeleton */}
+            <div className="mt-8 flex justify-end">
+              <div className="w-32 h-12 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Skeleton */}
+        <footer className="bg-gray-200 px-4 md:px-8 py-8 mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <div className="w-10 h-10 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-5 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+              <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-16 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-14 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-18 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-24 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-28 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="flex space-x-4">
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-300 pt-4 flex flex-col md:flex-row items-center justify-between">
+            <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            <div className="w-56 h-3 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </footer>
       </div>
     );
   }

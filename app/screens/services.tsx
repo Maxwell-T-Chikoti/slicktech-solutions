@@ -54,8 +54,92 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="loader ease-linear rounded-full border-8 border-t-8 border-gray-200 h-24 w-24"></div>
+      <div className="min-h-screen bg-slate-50">
+        {/* Navigation Bar Skeleton */}
+        <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-8 h-8 bg-slate-200 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <main className="px-4 md:px-8 py-10 max-w-7xl mx-auto space-y-12">
+          {/* Header Skeleton */}
+          <div className="relative overflow-hidden rounded-[2rem] border-2 border-slate-200 bg-white p-8 md:p-12 shadow-xl shadow-slate-200/50">
+            <div className="absolute -top-24 -right-24 w-96 h-96 bg-slate-100 rounded-full blur-3xl opacity-50 animate-pulse"></div>
+            <div className="relative z-10">
+              <div className="w-96 h-12 bg-slate-200 rounded-lg animate-pulse mb-4"></div>
+              <div className="w-64 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+          </div>
+
+          {/* Services Grid Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, index) => (
+              <div key={index} className="bg-white border-2 border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm">
+                {/* Service Image Skeleton */}
+                <div className="h-48 bg-gradient-to-br from-slate-200 to-slate-300 animate-pulse flex items-center justify-center">
+                  <div className="w-24 h-8 bg-slate-400 rounded animate-pulse"></div>
+                </div>
+
+                {/* Service Content Skeleton */}
+                <div className="p-8 space-y-4">
+                  {/* Title */}
+                  <div className="w-3/4 h-6 bg-slate-200 rounded animate-pulse"></div>
+
+                  {/* Description */}
+                  <div className="space-y-2">
+                    <div className="w-full h-4 bg-slate-200 rounded animate-pulse"></div>
+                    <div className="w-5/6 h-4 bg-slate-200 rounded animate-pulse"></div>
+                    <div className="w-4/6 h-4 bg-slate-200 rounded animate-pulse"></div>
+                  </div>
+
+                  {/* Features Section */}
+                  <div className="pb-6 border-b border-slate-200">
+                    <div className="w-20 h-3 bg-slate-200 rounded animate-pulse mb-3"></div>
+                    <div className="space-y-2">
+                      <div className="w-32 h-3 bg-slate-200 rounded animate-pulse"></div>
+                      <div className="w-28 h-3 bg-slate-200 rounded animate-pulse"></div>
+                      <div className="w-36 h-3 bg-slate-200 rounded animate-pulse"></div>
+                    </div>
+                  </div>
+
+                  {/* Price and Button */}
+                  <div className="flex items-center justify-between">
+                    <div className="w-16 h-8 bg-slate-200 rounded animate-pulse"></div>
+                    <div className="w-20 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
+
+        {/* Footer Skeleton */}
+        <footer className="mt-20 py-16 bg-white border-t-2 border-slate-200 text-center">
+          <div className="max-w-7xl mx-auto px-8 flex flex-col items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex gap-8">
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="w-48 h-3 bg-slate-200 rounded animate-pulse"></div>
+          </div>
+        </footer>
       </div>
     );
   }

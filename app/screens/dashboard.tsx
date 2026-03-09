@@ -25,6 +25,7 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
   const [services, setServices] = useState<any[]>([]);
   const [totalSpent, setTotalSpent] = useState(0);
   const [upcomingCount, setUpcomingCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const todayDate = new Date().toLocaleDateString('en-ZA', {
   weekday: 'short',
   day: 'numeric',
@@ -67,9 +68,14 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
   };
 
   useEffect(() => {
-    fetchBookings();
-    fetchTechNews();
-    fetchServices();
+    const loadData = async () => {
+      await Promise.all([fetchBookings(), fetchTechNews(), fetchServices()]);
+      // Show loading animation for at least 1 second
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 1000);
+    };
+    loadData();
   }, []);
 
   const handleNavigate = (page: string, payload?: any) => {
@@ -89,6 +95,168 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
   if (currentPage === 'bookingdetails') return <BookingDetails booking={selectedBooking} setBookings={setBookings} onNavigate={handleNavigate} onLogout={handleLogout} startReschedule={initialReschedule} />;
   if (currentPage === 'profile') return <ProfileScreen onNavigate={handleNavigate} onLogout={handleLogout} />;
   if (currentPage === 'newbooking') return <NewBookingScreen onNavigate={handleNavigate} onLogout={handleLogout} selectedService={selectedService} />;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+        {/* Navigation Skeleton */}
+        <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-8 h-8 bg-slate-200 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <main className="px-4 md:px-8 py-10 max-w-7xl mx-auto space-y-12">
+          {/* Banner Skeleton */}
+          <div className="relative overflow-hidden rounded-[2rem] border-2 border-slate-200 bg-white p-8 md:p-12 shadow-xl shadow-slate-200/50">
+            <div className="absolute -top-24 -right-24 w-96 h-96 bg-slate-100 rounded-full blur-3xl opacity-50 animate-pulse"></div>
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="text-center md:text-left">
+                <div className="w-80 h-12 bg-slate-200 rounded-lg animate-pulse mb-4"></div>
+                <div className="w-64 h-6 bg-slate-200 rounded animate-pulse"></div>
+              </div>
+              <div className="w-32 h-12 bg-slate-200 rounded-2xl animate-pulse"></div>
+            </div>
+          </div>
+
+          {/* Stats Grid Skeleton */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white border-2 border-slate-200 p-6 rounded-3xl shadow-sm">
+                <div className="w-12 h-12 bg-slate-200 rounded-2xl animate-pulse mb-4"></div>
+                <div className="w-20 h-3 bg-slate-200 rounded animate-pulse mb-2"></div>
+                <div className="w-16 h-8 bg-slate-200 rounded animate-pulse"></div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+            {/* Main Area Skeleton */}
+            <div className="lg:col-span-2 space-y-10">
+              {/* Appointments Section */}
+              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                <div className="w-48 h-6 bg-slate-200 rounded animate-pulse mb-8"></div>
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="flex flex-col sm:flex-row items-center justify-between p-6 bg-slate-50 border border-slate-200 rounded-2xl gap-4">
+                      <div className="flex items-center gap-5">
+                        <div className="w-14 h-14 bg-slate-200 rounded-xl animate-pulse"></div>
+                        <div className="text-center sm:text-left">
+                          <div className="w-24 h-4 bg-slate-200 rounded animate-pulse mb-2"></div>
+                          <div className="flex gap-3">
+                            <div className="w-16 h-3 bg-slate-200 rounded animate-pulse"></div>
+                            <div className="w-12 h-3 bg-slate-200 rounded animate-pulse"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="w-20 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Records Section */}
+              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                <div className="w-32 h-6 bg-slate-200 rounded animate-pulse mb-8"></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="bg-slate-50 border border-slate-200 p-6 rounded-2xl">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="w-20 h-4 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="w-12 h-5 bg-slate-200 rounded animate-pulse"></div>
+                      </div>
+                      <div className="flex items-center justify-between mt-6">
+                        <div className="w-12 h-3 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="w-16 h-3 bg-slate-200 rounded animate-pulse"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar Skeleton */}
+            <div className="space-y-10">
+              {/* Tech Insights */}
+              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                <div className="w-24 h-5 bg-slate-200 rounded animate-pulse mb-6"></div>
+                <div className="space-y-6">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                      <div className="w-full h-4 bg-slate-200 rounded animate-pulse mb-2"></div>
+                      <div className="w-24 h-3 bg-slate-200 rounded animate-pulse"></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Support Card */}
+              <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
+                <div className="w-32 h-6 bg-slate-700 rounded animate-pulse mb-3"></div>
+                <div className="w-full h-4 bg-slate-700 rounded animate-pulse mb-8"></div>
+                <div className="w-full h-12 bg-slate-700 rounded-xl animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Services Section Skeleton */}
+          <div className="bg-slate-900 rounded-[3rem] p-10 md:p-14">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
+              <div>
+                <div className="w-64 h-8 bg-slate-700 rounded animate-pulse mb-2"></div>
+                <div className="w-80 h-5 bg-slate-700 rounded animate-pulse"></div>
+              </div>
+              <div className="w-40 h-10 bg-slate-700 rounded-xl animate-pulse"></div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="bg-slate-800 border border-slate-700 rounded-3xl p-8">
+                  <div className="w-16 h-16 bg-slate-700 rounded-2xl animate-pulse mb-6"></div>
+                  <div className="w-32 h-6 bg-slate-700 rounded animate-pulse mb-3"></div>
+                  <div className="space-y-2 mb-8">
+                    <div className="w-full h-4 bg-slate-700 rounded animate-pulse"></div>
+                    <div className="w-5/6 h-4 bg-slate-700 rounded animate-pulse"></div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="w-16 h-6 bg-slate-700 rounded animate-pulse"></div>
+                    <div className="w-20 h-10 bg-slate-700 rounded-2xl animate-pulse"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+
+        {/* Footer Skeleton */}
+        <footer className="mt-20 py-16 bg-white border-t-2 border-slate-200 text-center">
+          <div className="max-w-7xl mx-auto px-8 flex flex-col items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex gap-8">
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+              <div className="w-6 h-6 bg-slate-200 rounded animate-pulse"></div>
+            </div>
+            <div className="w-48 h-3 bg-slate-200 rounded animate-pulse"></div>
+          </div>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-blue-100 font-sans">

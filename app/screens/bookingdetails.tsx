@@ -1,9 +1,12 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
-import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaChevronLeft, FaChevronRight, FaDownload } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 
 interface BookingDetailsProps {
   booking: any;
@@ -18,8 +21,7 @@ const ALL_TIME_SLOTS = ['9:00 AM', '10:00 AM', '11:00 AM', '1:00 PM', '2:00 PM',
 const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startReschedule = false }: BookingDetailsProps) => {
   const [rescheduling, setRescheduling] = useState(false);
   const [tempDate, setTempDate] = useState('');
-  const [tempTime, setTempTime] = useState('');
-
+  const [tempTime, setTempTime] = useState('');  const [loading, setLoading] = useState(true);
   // bookedSlots: a Set of "date||time" strings pulled directly from DB
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -28,6 +30,15 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   const [currentDate] = useState(new Date());
   const [displayMonth, setDisplayMonth] = useState(currentDate.getMonth());
   const [displayYear, setDisplayYear] = useState(currentDate.getFullYear());
+
+  useEffect(() => {
+    // Show loading animation for at least 1 second
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
@@ -181,10 +192,226 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
     setRescheduling(true);
   };
 
+  const downloadBookingPDF = async () => {
+    const pdf = new jsPDF();
+    
+    // Create a temporary div for PDF content
+    const pdfContent = document.createElement('div');
+    pdfContent.style.width = '210mm';
+    pdfContent.style.padding = '20mm';
+    pdfContent.style.fontFamily = 'Arial, sans-serif';
+    pdfContent.style.backgroundColor = '#ffffff';
+    pdfContent.style.position = 'absolute';
+    pdfContent.style.left = '-9999px';
+    pdfContent.style.top = '-9999px';
+    pdfContent.innerHTML = `
+      <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px;">
+        <img src="${SlickTechLogo.src}" alt="SlickTech Logo" style="height: 60px; margin-bottom: 15px;" />
+        <h1 style="color: #1e293b; font-size: 28px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 2px;">SLICKTECH</h1>
+        <p style="color: #64748b; font-size: 14px; margin: 5px 0 0 0;">Professional Tech Solutions</p>
+      </div>
+      
+      <div style="text-align: center; margin-bottom: 40px;">
+        <h2 style="color: #1e293b; font-size: 24px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Booking Confirmation</h2>
+        <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">Booking ID: ${booking.id}</p>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px;">
+        <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 1px;">Service Details</h3>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">Service:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${booking.service}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">Price:</strong>
+            <span style="color: #2563eb; font-size: 16px; font-weight: bold; margin-left: 8px;">${booking.price}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">Status:</strong>
+            <span style="color: ${booking.status === 'Confirmed' ? '#059669' : '#d97706'}; font-size: 14px; font-weight: bold; margin-left: 8px;">${booking.status}</span>
+          </div>
+        </div>
+        
+        <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 1px;">Schedule Information</h3>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">📅 Date:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${booking.date}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">🕐 Time:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${booking.time}</span>
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong style="color: #374151; font-size: 14px;">📍 Location:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${booking.location}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 40px;">
+        <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 1px;">Service Description</h3>
+        <p style="color: #374151; font-size: 14px; line-height: 1.6; margin: 0;">${booking.description}</p>
+      </div>
+      
+      <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 40px;">
+        <h3 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 1px;">Additional Information</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <div>
+            <strong style="color: #374151; font-size: 14px;">Reschedules Used:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${booking.reschedules || 0}/1</span>
+          </div>
+          <div>
+            <strong style="color: #374151; font-size: 14px;">Booking Date:</strong>
+            <span style="color: #1e293b; font-size: 14px; margin-left: 8px;">${new Date().toLocaleDateString()}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div style="text-align: center; border-top: 2px solid #e2e8f0; padding-top: 30px; margin-top: 40px;">
+        <p style="color: #64748b; font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Thank you for choosing SlickTech</p>
+        <p style="color: #64748b; font-size: 10px; margin: 5px 0 0 0;">For any questions, please contact our support team</p>
+        <p style="color: #64748b; font-size: 10px; margin: 5px 0 0 0;">© 2026 SlickTech Technologies | All rights reserved</p>
+      </div>
+    `;
+    
+    document.body.appendChild(pdfContent);
+    
+    try {
+      const canvas = await html2canvas(pdfContent, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 794, // A4 width in pixels at 96 DPI
+        height: 1123 // A4 height in pixels at 96 DPI
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297); // A4 dimensions in mm
+      
+      pdf.save(`SlickTech_Booking_${booking.id}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      document.body.removeChild(pdfContent);
+    }
+  };
+
   if (!booking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-gray-600">No booking selected.</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        {/* Navigation Skeleton */}
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-gray-200 rounded-xl animate-pulse"></div>
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-16 h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Skeleton */}
+        <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
+          <div className="w-48 h-6 bg-gray-200 rounded animate-pulse mb-6"></div>
+
+          <div className="bg-white rounded-[2.5rem] border-2 border-gray-200 shadow-sm p-8 md:p-12">
+            <div className="w-64 h-8 bg-gray-200 rounded animate-pulse mb-8"></div>
+
+            <div className="space-y-4 mb-8 pb-8 border-b border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <div className="w-20 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                  <div className="w-32 h-6 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-16 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                  <div className="w-28 h-6 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-18 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                  <div className="w-24 h-6 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+                <div>
+                  <div className="w-14 h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                  <div className="w-20 h-6 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="w-32 h-6 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-full h-20 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+
+            <div className="flex justify-between mt-8">
+              <div className="w-24 h-10 bg-gray-200 rounded animate-pulse"></div>
+              <div className="w-28 h-10 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Skeleton */}
+        <footer className="bg-gray-200 px-4 md:px-8 py-8 mt-12">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center space-x-2 mb-4">
+                <div className="w-10 h-10 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-5 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+              <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-16 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-14 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-18 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-24 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="space-y-2">
+                <div className="w-20 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-24 h-3 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-28 h-3 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+
+            <div>
+              <div className="w-20 h-5 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <div className="flex space-x-4">
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+                <div className="w-6 h-6 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-300 pt-4 flex flex-col md:flex-row items-center justify-between">
+            <div className="w-48 h-3 bg-gray-200 rounded animate-pulse"></div>
+            <div className="w-56 h-3 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+        </footer>
       </div>
     );
   }
@@ -243,6 +470,13 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
           </div>
 
           <div className="flex gap-4">
+            <button
+              onClick={downloadBookingPDF}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 px-6 rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
+            >
+              <FaDownload className="text-sm" />
+              Download PDF
+            </button>
             <button
               onClick={handleStartReschedule}
               disabled={booking.reschedules >= 1}
