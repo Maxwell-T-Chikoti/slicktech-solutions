@@ -33,12 +33,17 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
 });
 
   const fetchBookings = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profileData } = await supabase.from('profiles').select('first_name').eq('id', user.id).single();
-      if (profileData?.first_name) setUserName(profileData.first_name);
+    // Get user from localStorage
+    const userSession = localStorage.getItem('slicktech_user');
+    if (!userSession) {
+      onLogout?.();
+      return;
     }
-    const { data } = await supabase.from('bookings').select('*').order('date', { ascending: true }).eq('user_id', user?.id);
+
+    const user = JSON.parse(userSession);
+    setUserName(user.first_name);
+
+    const { data } = await supabase.from('bookings').select('*').order('date', { ascending: true }).eq('user_id', user.id);
     if (data) {
       setBookings(data);
       const today = new Date();

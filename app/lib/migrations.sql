@@ -1,3 +1,6 @@
+-- Add password_hash column for local authentication
+ALTER TABLE profiles ADD COLUMN password_hash TEXT;
+
 -- Add role column to profiles table to differentiate between users and admins
 ALTER TABLE profiles ADD COLUMN role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin'));
 

@@ -25,6 +25,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   // Helper to handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,58 +43,106 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       return;
     }
 
-    const { data, error: signupError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: {
-          first_name: formData.firstName,
-          surname: formData.surname,
-          phone: formData.phone,
-          location: formData.location,
-          full_name: `${formData.firstName} ${formData.surname}`
+    try {
+      // Create user in Supabase auth (this will be stored in the authentication system)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            first_name: formData.firstName,
+            surname: formData.surname,
+            phone: formData.phone,
+            location: formData.location,
+          },
         },
-      },
-    });
+      });
 
-    if (signupError) {
-      setError(signupError.message);
-      setLoading(false);
-    } else if (data.user) {
-      // Create user profile in the profiles table
-      const { error: profileError } = await supabase
+      if (authError || !authData?.user) {
+        setError(`Authentication failed: ${authError?.message || 'Unknown error'}`);
+        setLoading(false);
+        return;
+      }
+
+      const userId = authData.user.id;
+
+      // Try to create profile in database
+      let profileData = null;
+      const { data: insertData, error: profileError } = await supabase
         .from('profiles')
         .insert({
-          id: data.user.id,
+          id: userId,
           first_name: formData.firstName,
           surname: formData.surname,
           phone: formData.phone,
           location: formData.location,
           email: formData.email,
-          created_at: new Date().toISOString(),
-        });
+        })
+        .select()
+        .single();
 
-      if (profileError) {
-        console.error('Error creating profile:', profileError);
-        setError('Account created but profile setup failed. Please contact support.');
+      // If insert succeeded, use that data
+      if (insertData) {
+        profileData = insertData;
+      } else if (profileError) {
+        // If there's an error, try to fetch the profile anyway
+        // (it might have been created despite the error)
+        console.log('Profile insert error, trying to fetch:', profileError);
+        const { data: fetchedProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        
+        if (fetchedProfile) {
+          // Profile exists, use it
+          profileData = fetchedProfile;
+        } else if (profileError.code === '23505') {
+          // Unique constraint violation
+          setError('An account with this email already exists');
+          setLoading(false);
+          return;
+        } else {
+          // Other error
+          setError(`Failed to create account: ${profileError.message || 'Unknown error'}`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (!profileData) {
+        setError('Failed to complete registration');
         setLoading(false);
         return;
       }
 
-      // Automatically sign in after registration
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
+      // Store user session in localStorage (simple auth)
+      const userSession = {
+        id: profileData.id,
+        email: profileData.email,
+        first_name: profileData.first_name,
+        surname: profileData.surname,
+        phone: profileData.phone,
+        location: profileData.location,
+        loggedIn: true,
+        loginTime: new Date().toISOString()
+      };
 
-      if (signInError) {
-        setError(signInError.message);
-        setLoading(false);
-      } else {
-        alert("Registration successful! Welcome to SlickTech!");
-        onToggle(); // Switch to dashboard
-        setLoading(false);
-      }
+      localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+
+      // Success!
+      setSuccess('Registration successful! Welcome to SlickTech!');
+      setLoading(false);
+      
+      // Redirect to login after 2 seconds
+      setTimeout(() => {
+        onToggle();
+        setSuccess(null);
+      }, 2000);
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError('Registration failed. Please try again.');
+      setLoading(false);
     }
   };
 
@@ -110,12 +159,13 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
               className="rounded-full shadow-lg object-cover"
             />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2 text-center lg:text-left">Create Account</h1>
+          <h1 className="text-3xl font-bold text-slate-900 mb-2 text-center lg:text-left">Create Account!</h1>
           <p className="text-gray-400 text-sm mb-8 text-center lg:text-left">
             Already have an account? <span className="text-blue-600 font-bold cursor-pointer hover:underline" onClick={onToggle}>Login here!</span>
           </p>
 
           {error && <p className="text-red-500 text-xs mb-4 bg-red-50 p-2 rounded border border-red-100">{error}</p>}
+          {success && <p className="text-green-600 text-xs mb-4 bg-green-50 p-2 rounded border border-green-200">{success}</p>}
 
           <form className="space-y-5" onSubmit={handleSignup}>
             {/* First Name & Surname Row */}
@@ -179,7 +229,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
               </div>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full bg-[#050A44] hover:bg-slate-800 text-white py-4 rounded-full font-bold text-sm shadow-xl transition-all uppercase tracking-widest disabled:opacity-50">
+            <button type="submit" disabled={loading || success !== null} className="w-full bg-[#050A44] hover:bg-slate-800 text-white py-4 rounded-full font-bold text-sm shadow-xl transition-all uppercase tracking-widest disabled:opacity-50">
               {loading ? "Registering..." : "Register"}
             </button>
           </form>

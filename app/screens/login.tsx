@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
 import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
@@ -25,44 +25,88 @@ const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  useEffect(() => {
+    const userSession = localStorage.getItem('slicktech_user');
+    if (userSession) {
+      try {
+        const user = JSON.parse(userSession);
+        if (user.loggedIn) {
+          setIsLoggedIn(true);
+        }
+      } catch (err) {
+        // Invalid session, clear it
+        localStorage.removeItem('slicktech_user');
+      }
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Supabase Sign In call
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      // Use Supabase auth to sign in
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (authError) {
-      // This will catch "Invalid login credentials" or "Email not confirmed"
-      setError(authError.message);
-      setLoading(false);
-    } else if (data.user) {
-      // Check if user is an admin (should not be in regular user login)
-      const { data: profileData } = await supabase
+      if (authError || !authData?.user) {
+        setError('Invalid email or password');
+        setLoading(false);
+        return;
+      }
+
+      const userId = authData.user.id;
+
+      // Get user profile from database
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
+        .select('*')
+        .eq('id', userId)
         .single();
 
-      if (profileData?.role === 'admin') {
-        // Admin trying to log in via user path, reject them
+      if (profileError || !profileData) {
+        setError('Profile not found');
+        setLoading(false);
+        return;
+      }
+
+      // Check if user is an admin
+      if (profileData.role === 'admin') {
         await supabase.auth.signOut();
         setError('Admins must use the admin login portal');
         setLoading(false);
-      } else {
-        // Regular user, allow login
-        setIsLoggedIn(true);
-        setLoading(false);
+        return;
       }
+
+      // Create user session in localStorage
+      const userSession = {
+        id: profileData.id,
+        email: profileData.email,
+        first_name: profileData.first_name,
+        surname: profileData.surname,
+        phone: profileData.phone,
+        location: profileData.location,
+        loggedIn: true,
+        loginTime: new Date().toISOString()
+      };
+
+      localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+
+      // Success!
+      setIsLoggedIn(true);
+      setLoading(false);
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Login failed. Please try again.');
+      setLoading(false);
     }
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('slicktech_user');
     setIsLoggedIn(false);
   };
 
