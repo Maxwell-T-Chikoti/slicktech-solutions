@@ -46,7 +46,6 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       email: formData.email,
       password: formData.password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           first_name: formData.firstName,
           surname: formData.surname,
@@ -61,6 +60,26 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       setError(signupError.message);
       setLoading(false);
     } else if (data.user) {
+      // Create user profile in the profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          first_name: formData.firstName,
+          surname: formData.surname,
+          phone: formData.phone,
+          location: formData.location,
+          email: formData.email,
+          created_at: new Date().toISOString(),
+        });
+
+      if (profileError) {
+        console.error('Error creating profile:', profileError);
+        setError('Account created but profile setup failed. Please contact support.');
+        setLoading(false);
+        return;
+      }
+
       // Automatically sign in after registration
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: formData.email,
