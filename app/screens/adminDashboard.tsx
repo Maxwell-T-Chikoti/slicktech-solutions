@@ -55,6 +55,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     customerCount: 0,
   });
   const [serviceBreakdown, setServiceBreakdown] = useState<any[]>([]);
+  // services management
+  const [services, setServices] = useState<any[]>([]);
+  const [newServiceTitle, setNewServiceTitle] = useState<string>('');
+  const [newServicePrice, setNewServicePrice] = useState<string>('');
+  const [editingService, setEditingService] = useState<any | null>(null);
 
   const fetchBookingsWithProfiles = async () => {
     setLoading(true);
@@ -159,6 +164,23 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   useEffect(() => {
+    // fetch services function (declare early so it can be called below)
+    const fetchServices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('services')
+          .select('*')
+          .order('title', { ascending: true });
+        if (error) {
+          console.error('Error fetching services:', error);
+          return;
+        }
+        setServices(data || []);
+      } catch (e) {
+        console.error('Error fetching services:', e);
+      }
+    };
+
     const checkAuthAndFetch = async () => {
       const {
         data: { user },
@@ -184,6 +206,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
       fetchBookingsWithProfiles();
       fetchCustomers();
+      fetchServices();
       logActivity('Admin logged in');
 
       // Set up real-time subscription for new bookings
@@ -201,6 +224,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     };
 
     checkAuthAndFetch();
+
   }, []);
 
   const updateBookingStatus = async (id: number, newStatus: string) => {
@@ -275,6 +299,59 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     } catch (error) {
       console.error('Error deleting bookings:', error);
       alert('Failed to delete selected bookings');
+    }
+  };
+
+  // Service management
+  const addService = async () => {
+    if (!newServiceTitle.trim() || !newServicePrice.trim()) return;
+    try {
+      if (editingService) {
+        // update existing
+        const { error } = await supabase
+          .from('services')
+          .update({ title: newServiceTitle.trim(), price: newServicePrice.trim() })
+          .eq('id', editingService.id);
+        if (error) throw error;
+        addNotification(`Service "${newServiceTitle}" updated`, 'success');
+        logActivity(`Updated service ${editingService.id}`);
+      } else {
+        const { error } = await supabase
+          .from('services')
+          .insert([{ title: newServiceTitle.trim(), price: newServicePrice.trim() }]);
+        if (error) throw error;
+        addNotification(`Service "${newServiceTitle}" added`, 'success');
+        logActivity(`Added service ${newServiceTitle}`);
+      }
+      setNewServiceTitle('');
+      setNewServicePrice('');
+      setEditingService(null);
+      fetchServices();
+    } catch (err) {
+      console.error('Error adding/updating service:', err);
+      addNotification('Failed to save service', 'error');
+    }
+  };
+
+  const deleteService = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this service?')) return;
+    try {
+      const { error } = await supabase
+        .from('services')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      addNotification('Service removed', 'success');
+      if (editingService && editingService.id === id) {
+        setEditingService(null);
+        setNewServiceTitle('');
+        setNewServicePrice('');
+      }
+      fetchServices();
+      logActivity(`Deleted service id ${id}`);
+    } catch (err) {
+      console.error('Error deleting service:', err);
+      addNotification('Failed to delete service', 'error');
     }
   };
 
@@ -783,6 +860,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   { id: 'dashboard', label: 'Dashboard', icon: FaChartBar },
                   { id: 'customers', label: 'Customers', icon: FaUser },
                   { id: 'activity', label: 'Activity Log', icon: FaHistory },
+                  { id: 'services', label: 'Services', icon: FaFilter },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -1163,6 +1241,84 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       ))
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'services' && (
+              <div className="px-6 py-12">
+                <h2 className="text-2xl font-bold text-slate-900 mb-8">🛠️ Service Management</h2>
+                <div className="mb-10 bg-white/60 p-6 rounded-2xl shadow-lg">
+                  <h3 className="text-xl font-semibold mb-4">
+                    {editingService ? 'Edit Service' : 'Add New Service'}
+                  </h3>
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <input
+                      type="text"
+                      placeholder="Service title"
+                      value={newServiceTitle}
+                      onChange={(e) => setNewServiceTitle(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Price (e.g. $50)"
+                      value={newServicePrice}
+                      onChange={(e) => setNewServicePrice(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={addService}
+                      className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold"
+                    >
+                      {editingService ? 'Save Changes' : 'Add Service'}
+                    </button>
+                    {editingService && (
+                      <button
+                        onClick={() => {
+                          setEditingService(null);
+                          setNewServiceTitle('');
+                          setNewServicePrice('');
+                        }}
+                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white/50 p-6 rounded-2xl shadow-lg">
+                  <h3 className="text-xl font-semibold mb-4">Existing Services</h3>
+                  {services.length === 0 ? (
+                    <p className="text-gray-600">No services available.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {services.map((svc) => (
+                        <li key={svc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+                          <span className="font-medium text-gray-800">{svc.title} - {svc.price}</span>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => {
+                                setEditingService(svc);
+                                setNewServiceTitle(svc.title);
+                                setNewServicePrice(svc.price);
+                              }}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Edit"
+                            >
+                              <FaCog />
+                            </button>
+                            <button
+                              onClick={() => deleteService(svc.id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Delete"
+                            >
+                              <FaTrash />
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             )}
