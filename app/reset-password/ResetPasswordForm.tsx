@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
 import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
-import { FaLock, FaEye, FaEyeSlash, FaCheckCircle } from 'react-icons/fa';
+import { FaLock, FaEye, FaEyeSlash, FaCheckCircle, FaSpinner } from 'react-icons/fa';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const ResetPasswordForm = () => {
   const [password, setPassword] = useState('');
@@ -15,6 +16,67 @@ const ResetPasswordForm = () => {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [verifying, setVerifying] = useState(true);
+  const [isValidSession, setIsValidSession] = useState(false);
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const handlePasswordReset = async () => {
+      try {
+        // Check if we have the reset token parameters
+        const accessToken = searchParams.get('access_token');
+        const refreshToken = searchParams.get('refresh_token');
+        const type = searchParams.get('type');
+
+        console.log('Reset password params:', { accessToken: !!accessToken, refreshToken: !!refreshToken, type });
+
+        if (accessToken && refreshToken && type === 'recovery') {
+          // Set the session with the tokens from the URL
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (sessionError) {
+            console.error('Session error:', sessionError);
+            setError('Invalid or expired reset link. Please request a new password reset.');
+            setVerifying(false);
+            return;
+          }
+
+          if (data.session) {
+            console.log('Password reset session established successfully');
+            setIsValidSession(true);
+            setVerifying(false);
+          } else {
+            console.error('No session data returned');
+            setError('Invalid reset link. Please request a new password reset.');
+            setVerifying(false);
+          }
+        } else {
+          // No reset parameters, check if user is already authenticated
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            console.log('Existing session found');
+            setIsValidSession(true);
+            setVerifying(false);
+          } else {
+            console.log('No valid session found');
+            setError('No valid reset session found. Please use the link from your email or request a new password reset.');
+            setVerifying(false);
+          }
+        }
+      } catch (err) {
+        console.error('Error handling password reset:', err);
+        setError('An error occurred while verifying your reset link. Please try again.');
+        setVerifying(false);
+      }
+    };
+
+    handlePasswordReset();
+  }, [searchParams]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,7 +131,26 @@ const ResetPasswordForm = () => {
           {/* ERROR DISPLAY */}
           {error && (
             <div className="bg-red-50 text-red-600 p-3 rounded-lg text-xs mb-6 border border-red-100">
-              {error}
+              <p className="mb-3">{error}</p>
+              <Link
+                href="/"
+                className="text-blue-600 hover:text-blue-800 underline text-xs"
+              >
+                Request a new password reset →
+              </Link>
+            </div>
+          )}
+
+          {/* LOADING STATE - Verifying reset link */}
+          {verifying && (
+            <div className="bg-blue-50 text-blue-600 p-4 rounded-lg text-sm mb-6 border border-blue-100">
+              <div className="flex items-center gap-2 mb-2">
+                <FaSpinner className="text-lg animate-spin" />
+                <p className="font-semibold">Verifying Reset Link...</p>
+              </div>
+              <p className="text-xs">
+                Please wait while we verify your password reset link.
+              </p>
             </div>
           )}
 
@@ -91,7 +172,9 @@ const ResetPasswordForm = () => {
               </Link>
             </div>
           ) : (
-            <form className="space-y-8" onSubmit={handleResetPassword}>
+            /* Only show form if session is valid and not verifying */
+            isValidSession && !verifying && (
+              <form className="space-y-8" onSubmit={handleResetPassword}>
               {/* New Password Field */}
               <div className="relative border-b border-gray-200 pb-2">
                 <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">
@@ -151,6 +234,7 @@ const ResetPasswordForm = () => {
                 {loading ? 'Updating...' : 'Reset Password'}
               </button>
             </form>
+          )
           )}
         </div>
       </div>
