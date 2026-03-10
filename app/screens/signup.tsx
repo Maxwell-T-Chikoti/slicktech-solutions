@@ -147,108 +147,154 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-12 overflow-y-auto">
-        <div className="w-full max-w-md py-10">
+        <div className="w-full max-w-md py-10 animate-fade-in">
           <div className="flex justify-center mb-10">
-            <Image
-              src={SlickTechLogo}
-              alt="SlickTech Logo"
-              width={160}
-              height={160}
-              className="rounded-full shadow-lg object-cover"
-            />
+            <div className="relative">
+              <Image
+                src={SlickTechLogo}
+                alt="SlickTech Logo"
+                width={160}
+                height={160}
+                className="rounded-full shadow-2xl object-cover border-4 border-white"
+              />
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+                <FaUser className="text-white text-xs" />
+              </div>
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2 text-center lg:text-left">Create Account!</h1>
-          <p className="text-gray-400 text-sm mb-8 text-center lg:text-left">
-            Already have an account? <span className="text-blue-600 font-bold cursor-pointer hover:underline" onClick={onToggle}>Login here!</span>
+          <h1 className="text-4xl font-black text-slate-900 mb-2 text-center tracking-tight">Join SlickTech</h1>
+          <p className="text-slate-500 text-sm mb-8 text-center">
+            Create your account to get started<br />
+            Already have an account? <span className="text-blue-600 font-semibold cursor-pointer hover:underline transition-colors" onClick={onToggle}>Sign in here</span>
           </p>
 
-          {error && <p className="text-red-500 text-xs mb-4 bg-red-50 p-2 rounded border border-red-100">{error}</p>}
-          {success && <p className="text-green-600 text-xs mb-4 bg-green-50 p-2 rounded border border-green-200">{success}</p>}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm mb-6 shadow-sm animate-slide-down">
+              <div className="flex items-center">
+                <FaLock className="mr-2 text-red-500" />
+                {error}
+              </div>
+            </div>
+          )}
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl text-sm mb-6 shadow-sm animate-slide-down">
+              <div className="flex items-center">
+                <FaUser className="mr-2 text-green-500" />
+                {success}
+              </div>
+            </div>
+          )}
 
           <form className="space-y-5" onSubmit={handleSignup}>
             {/* First Name & Surname Row */}
             <div className="flex gap-4">
-              <div className="flex-1 border-b border-gray-200 pb-2">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">First Name</label>
-                <div className="flex items-center">
-                  <FaUser className="text-slate-800 mr-3 text-sm" />
-                  <input name="firstName" type="text" value={formData.firstName} onChange={handleChange} placeholder="John" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+              <div className="flex-1 group">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">First Name</label>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                    <FaUser />
+                  </div>
+                  <input name="firstName" type="text" value={formData.firstName} onChange={handleChange} placeholder="John" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
               </div>
-              <div className="flex-1 border-b border-gray-200 pb-2">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Surname</label>
-                <div className="flex items-center">
-                  <input name="surname" type="text" value={formData.surname} onChange={handleChange} placeholder="Doe" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+              <div className="flex-1 group">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Surname</label>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                  <input name="surname" type="text" value={formData.surname} onChange={handleChange} placeholder="Doe" className="w-full px-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
               </div>
             </div>
 
             {/* Email */}
-            <div className="border-b border-gray-200 pb-2">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Email</label>
-              <div className="flex items-center">
-                <FaEnvelope className="text-slate-800 mr-3 text-sm" />
-                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+            <div className="group">
+              <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Email Address</label>
+              <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                  <FaEnvelope />
+                </div>
+                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
             </div>
 
             {/* Phone & Location Row */}
             <div className="flex gap-4">
-              <div className="flex-1 border-b border-gray-200 pb-2">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Phone</label>
-                <div className="flex items-center">
-                  <FaPhone className="text-slate-800 mr-3 text-sm" />
-                  <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="+123..." className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+              <div className="flex-1 group">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Phone</label>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                    <FaPhone />
+                  </div>
+                  <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="+123..." className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
               </div>
-              <div className="flex-1 border-b border-gray-200 pb-2">
-                <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Location</label>
-                <div className="flex items-center">
-                  <FaMapMarkerAlt className="text-slate-800 mr-3 text-sm" />
-                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="City, Country" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+              <div className="flex-1 group">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Location</label>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                    <FaMapMarkerAlt />
+                  </div>
+                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="City, Country" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
               </div>
             </div>
 
             {/* Password */}
-            <div className="border-b border-gray-200 pb-2">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Password</label>
-              <div className="flex items-center">
-                <FaLock className="text-slate-800 mr-3 text-sm" />
-                <input name="password" type="password" value={formData.password} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+            <div className="group">
+              <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Password</label>
+              <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                  <FaLock />
+                </div>
+                <input name="password" type="password" value={formData.password} onChange={handleChange} placeholder="••••••••" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
             </div>
 
-            <div className="border-b border-gray-200 pb-2">
-              <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Confirm Password</label>
-              <div className="flex items-center">
-                <FaLock className="text-slate-800 mr-3 text-sm" />
-                <input name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" className="w-full outline-none text-sm text-slate-900 placeholder-slate-900" required />
+            <div className="group">
+              <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Confirm Password</label>
+              <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                  <FaLock />
+                </div>
+                <input name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
             </div>
 
-            <button type="submit" disabled={loading || success !== null} className="w-full bg-[#050A44] hover:bg-slate-800 text-white py-4 rounded-full font-bold text-sm shadow-xl transition-all uppercase tracking-widest disabled:opacity-50">
-              {loading ? "Registering..." : "Register"}
+            <button type="submit" disabled={loading || success !== null} className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-4 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 uppercase tracking-widest disabled:opacity-70 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]">
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  Creating Account...
+                </div>
+              ) : (
+                "Create Account"
+              )}
             </button>
           </form>
+
         </div>
       </div>
-      <div className="hidden lg:flex w-1/2 bg-[#050A44] relative overflow-hidden rounded-l-[60px] items-center justify-center">
+      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 relative overflow-hidden rounded-l-[60px] items-center justify-center">
+        <div className="absolute inset-0 bg-black/10"></div>
         <div className="relative z-10 w-3/4">
-          <div className="w-full h-64 bg-white rounded-3xl flex items-center justify-center">
+          <div className="w-full h-80 bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 flex items-center justify-center shadow-2xl">
             <Image
               src={SlickTechLogo}
               alt="SlickTech Logo"
-              width={200}
-              height={200}
-              className="object-contain"
+              width={250}
+              height={250}
+              className="object-contain filter brightness-0 invert"
             />
           </div>
+          <div className="text-center mt-8">
+            <h2 className="text-white text-2xl font-bold mb-2">Welcome Aboard</h2>
+            <p className="text-green-200 text-sm">Join our community of tech enthusiasts</p>
+          </div>
         </div>
-        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-white/5 rounded-full blur-3xl"></div>
+        <div className="absolute top-[-20%] right-[-20%] w-96 h-96 bg-white/5 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-[-20%] left-[-20%] w-96 h-96 bg-green-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-white/5 rounded-full blur-2xl animate-bounce delay-500"></div>
       </div>
     </div>
   );
