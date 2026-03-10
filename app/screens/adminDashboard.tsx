@@ -334,6 +334,23 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   // Service management
   const addService = async () => {
     if (!newServiceTitle.trim() || !newServicePrice.trim()) return;
+
+    // debug: log current session and role
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('attempting addService as user', user);
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        console.log('user profile role', profile?.role);
+      }
+    } catch (fetchErr) {
+      console.warn('could not fetch user info before addService', fetchErr);
+    }
+
     try {
       if (editingService) {
         // update existing
@@ -358,7 +375,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchServices();
     } catch (err) {
       console.error('Error adding/updating service:', err);
-      addNotification(`Failed to save service: ${(err as any)?.message || 'Unknown error'}`, 'error');
+      if ((err as any)?.message?.includes('row-level security')) {
+        addNotification('Failed to save service: row-level security prevented the action. Make sure you are logged in as an admin and the policies allow inserts.', 'error');
+      } else {
+        addNotification(`Failed to save service: ${(err as any)?.message || 'Unknown error'}`, 'error');
+      }
     }
   };
 
