@@ -30,7 +30,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<BookingWithProfile | null>(null);
-  const [viewAnalytics, setViewAnalytics] = useState<'bookings' | 'revenue' | null>(null);
+  const [viewAnalytics, setViewAnalytics] = useState<'bookings' | 'revenue' | 'busiest-days' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -53,6 +53,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     averageRating: 4.8,
     topService: '',
     customerCount: 0,
+    dayOfWeekCounts: {
+      'Monday': 0,
+      'Tuesday': 0,
+      'Wednesday': 0,
+      'Thursday': 0,
+      'Friday': 0,
+      'Saturday': 0,
+      'Sunday': 0
+    },
   });
   const [serviceBreakdown, setServiceBreakdown] = useState<any[]>([]);
   // services management
@@ -166,6 +175,25 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
       const topService = breakdown.length > 0 ? breakdown[0].service : 'N/A';
 
+      // Calculate bookings by day of week
+      const dayOfWeekCounts = {
+        'Monday': 0,
+        'Tuesday': 0,
+        'Wednesday': 0,
+        'Thursday': 0,
+        'Friday': 0,
+        'Saturday': 0,
+        'Sunday': 0
+      };
+      
+      bookingsWithProfiles.forEach(booking => {
+        const date = new Date(booking.date);
+        const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+        if (dayOfWeekCounts.hasOwnProperty(dayName)) {
+          dayOfWeekCounts[dayName as keyof typeof dayOfWeekCounts]++;
+        }
+      });
+
       setMetrics({
         totalBookings: bookingsWithProfiles.length,
         pendingBookings: pending,
@@ -175,6 +203,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         averageRating: 4.8,
         topService: topService,
         customerCount: uniqueCustomers,
+        dayOfWeekCounts: dayOfWeekCounts,
       });
     }
     setLoading(false);
@@ -559,18 +588,37 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
   };
 
-  // Export KPIs to PDF with charts
+  // Export KPIs to PDF with charts (multi-page support)
   const exportKPIsToPDF = async () => {
-    const pdfContent = document.createElement('div');
-    pdfContent.style.width = '210mm';
-    pdfContent.style.padding = '20mm';
-    pdfContent.style.fontFamily = 'Arial, sans-serif';
-    pdfContent.style.backgroundColor = '#ffffff';
-    pdfContent.style.position = 'absolute';
-    pdfContent.style.left = '-9999px';
-    pdfContent.style.top = '-9999px';
+    const pdf = new jsPDF();
+    let currentPage = 1;
     
-    pdfContent.innerHTML = `
+    // Helper function to add a new page
+    const addNewPage = () => {
+      pdf.addPage();
+      currentPage++;
+      // Add page number
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Page ${currentPage}`, 105, 290, { align: 'center' });
+    };
+    
+    // Add page number to first page
+    pdf.setFontSize(8);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(`Page ${currentPage}`, 105, 290, { align: 'center' });
+    
+    // Page 1: Header and Main KPIs
+    const page1Content = document.createElement('div');
+    page1Content.style.width = '210mm';
+    page1Content.style.padding = '20mm';
+    page1Content.style.fontFamily = 'Arial, sans-serif';
+    page1Content.style.backgroundColor = '#ffffff';
+    page1Content.style.position = 'absolute';
+    page1Content.style.left = '-9999px';
+    page1Content.style.top = '-9999px';
+    
+    page1Content.innerHTML = `
       <div style="text-align: center; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px;">
         <img src="${SlickTechLogo.src}" alt="SlickTech Logo" style="height: 60px; margin-bottom: 15px;" />
         <h1 style="color: #1e293b; font-size: 28px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 2px;">SLICKTECH</h1>
@@ -622,7 +670,41 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </div>
         </div>
       </div>
+    `;
+    
+    document.body.appendChild(page1Content);
+    
+    try {
+      const canvas1 = await html2canvas(page1Content, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 794,
+        height: 1123
+      });
       
+      const imgData1 = canvas1.toDataURL('image/png');
+      pdf.addImage(imgData1, 'PNG', 0, 0, 210, 297);
+    } catch (error) {
+      console.error('Error generating page 1:', error);
+    } finally {
+      document.body.removeChild(page1Content);
+    }
+    
+    // Page 2: Performance Metrics and Service Performance
+    addNewPage();
+    
+    const page2Content = document.createElement('div');
+    page2Content.style.width = '210mm';
+    page2Content.style.padding = '20mm';
+    page2Content.style.fontFamily = 'Arial, sans-serif';
+    page2Content.style.backgroundColor = '#ffffff';
+    page2Content.style.position = 'absolute';
+    page2Content.style.left = '-9999px';
+    page2Content.style.top = '-9999px';
+    
+    page2Content.innerHTML = `
       <div style="margin-bottom: 40px;">
         <h3 style="color: #1e293b; font-size: 20px; font-weight: bold; margin: 0 0 25px 0; text-transform: uppercase; letter-spacing: 1px;">📈 Performance Metrics</h3>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px;">
@@ -667,7 +749,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       <div style="margin-bottom: 40px;">
         <h3 style="color: #1e293b; font-size: 20px; font-weight: bold; margin: 0 0 25px 0; text-transform: uppercase; letter-spacing: 1px;">🎯 Service Performance</h3>
         <div style="background: #f8fafc; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0;">
-          ${serviceBreakdown.slice(0, 8).map(service => `
+          ${serviceBreakdown.slice(0, 6).map(service => `
             <div style="display: flex; justify-between; align-items: center; margin-bottom: 15px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
               <div style="flex: 1;">
                 <div style="font-weight: bold; color: #1e293b; margin-bottom: 5px;">${service.service}</div>
@@ -683,17 +765,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           `).join('')}
         </div>
       </div>
-      
-      <div style="text-align: center; border-top: 2px solid #e2e8f0; padding-top: 30px; margin-top: 40px;">
-        <p style="color: #64748b; font-size: 10px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Generated by SlickTech Admin Dashboard</p>
-        <p style="color: #64748b; font-size: 8px; margin: 5px 0 0 0;">© 2026 SlickTech Technologies | All rights reserved</p>
-      </div>
     `;
     
-    document.body.appendChild(pdfContent);
+    document.body.appendChild(page2Content);
     
     try {
-      const canvas = await html2canvas(pdfContent, {
+      const canvas2 = await html2canvas(page2Content, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
@@ -702,23 +779,129 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         height: 1123
       });
       
-      const pdf = new jsPDF();
-      const imgData = canvas.toDataURL('image/png');
-      pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
-      
-      pdf.save(`SlickTech_KPI_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      const imgData2 = canvas2.toDataURL('image/png');
+      pdf.addImage(imgData2, 'PNG', 0, 0, 210, 297);
     } catch (error) {
-      console.error('Error generating KPI PDF:', error);
-      alert('Failed to generate KPI PDF. Please try again.');
+      console.error('Error generating page 2:', error);
     } finally {
-      document.body.removeChild(pdfContent);
+      document.body.removeChild(page2Content);
     }
+    
+    // Page 3: Booking History by Day of Week
+    addNewPage();
+    
+    // Calculate bookings by day of week
+    const dayOfWeekCounts = {
+      'Monday': 0,
+      'Tuesday': 0,
+      'Wednesday': 0,
+      'Thursday': 0,
+      'Friday': 0,
+      'Saturday': 0,
+      'Sunday': 0
+    };
+    
+    bookings.forEach(booking => {
+      const date = new Date(booking.date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      if (dayOfWeekCounts.hasOwnProperty(dayName)) {
+        dayOfWeekCounts[dayName as keyof typeof dayOfWeekCounts]++;
+      }
+    });
+    
+    const maxBookings = Math.max(...Object.values(dayOfWeekCounts));
+    
+    const page3Content = document.createElement('div');
+    page3Content.style.width = '210mm';
+    page3Content.style.padding = '20mm';
+    page3Content.style.fontFamily = 'Arial, sans-serif';
+    page3Content.style.backgroundColor = '#ffffff';
+    page3Content.style.position = 'absolute';
+    page3Content.style.left = '-9999px';
+    page3Content.style.top = '-9999px';
+    
+    page3Content.innerHTML = `
+      <div style="margin-bottom: 40px;">
+        <h3 style="color: #1e293b; font-size: 20px; font-weight: bold; margin: 0 0 25px 0; text-transform: uppercase; letter-spacing: 1px;">📅 Booking History by Day of Week</h3>
+        <div style="background: #f8fafc; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <div style="margin-bottom: 20px; text-align: center;">
+            <h4 style="color: #1e293b; font-size: 16px; font-weight: bold; margin: 0 0 10px 0;">Busiest Days Analysis</h4>
+            <p style="color: #64748b; font-size: 12px; margin: 0;">Total bookings analyzed: ${bookings.length}</p>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+            ${Object.entries(dayOfWeekCounts)
+              .sort(([,a], [,b]) => b - a)
+              .map(([day, count]) => `
+                <div style="display: flex; align-items: center; gap: 15px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
+                  <div style="width: 100px; font-weight: bold; color: #1e293b;">${day}</div>
+                  <div style="flex: 1; display: flex; align-items: center; gap: 15px;">
+                    <div style="flex: 1; height: 20px; background: #e5e7eb; border-radius: 10px; overflow: hidden;">
+                      <div style="width: ${maxBookings > 0 ? (count / maxBookings) * 100 : 0}%; height: 100%; background: linear-gradient(90deg, #3b82f6, #1d4ed8); border-radius: 10px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div style="width: 60px; text-align: right; font-weight: bold; color: #1e293b;">${count}</div>
+                  </div>
+                </div>
+              `).join('')}
+          </div>
+          
+          <div style="margin-top: 25px; padding: 20px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border: 1px solid #bae6fd;">
+            <h5 style="color: #0c4a6e; font-size: 14px; font-weight: bold; margin: 0 0 10px 0;">📊 Summary</h5>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; font-size: 12px;">
+              <div>
+                <span style="color: #64748b;">Busiest Day:</span>
+                <span style="font-weight: bold; color: #1e293b; margin-left: 5px;">
+                  ${Object.entries(dayOfWeekCounts).reduce((a, b) => dayOfWeekCounts[a[0] as keyof typeof dayOfWeekCounts] > dayOfWeekCounts[b[0] as keyof typeof dayOfWeekCounts] ? a : b)[0]}
+                  (${Math.max(...Object.values(dayOfWeekCounts))} bookings)
+                </span>
+              </div>
+              <div>
+                <span style="color: #64748b;">Slowest Day:</span>
+                <span style="font-weight: bold; color: #1e293b; margin-left: 5px;">
+                  ${Object.entries(dayOfWeekCounts).reduce((a, b) => dayOfWeekCounts[a[0] as keyof typeof dayOfWeekCounts] < dayOfWeekCounts[b[0] as keyof typeof dayOfWeekCounts] ? a : b)[0]}
+                  (${Math.min(...Object.values(dayOfWeekCounts))} bookings)
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div style="text-align: center; border-top: 2px solid #e2e8f0; padding-top: 30px; margin-top: 40px;">
+        <p style="color: #64748b; font-size: 10px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Generated by SlickTech Admin Dashboard</p>
+        <p style="color: #64748b; font-size: 8px; margin: 5px 0 0 0;">© 2026 SlickTech Technologies | All rights reserved</p>
+      </div>
+    `;
+    
+    document.body.appendChild(page3Content);
+    
+    try {
+      const canvas3 = await html2canvas(page3Content, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 794,
+        height: 1123
+      });
+      
+      const imgData3 = canvas3.toDataURL('image/png');
+      pdf.addImage(imgData3, 'PNG', 0, 0, 210, 297);
+    } catch (error) {
+      console.error('Error generating page 3:', error);
+    } finally {
+      document.body.removeChild(page3Content);
+    }
+    
+    pdf.save(`SlickTech_KPI_Report_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Confirmed':
         return 'bg-green-100 text-green-800';
+      case 'Complete':
+        return 'bg-blue-100 text-blue-800';
       case 'Rejected':
         return 'bg-red-100 text-red-800';
       case 'Pending':
@@ -898,6 +1081,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <option value="all">All Status</option>
                     <option value="Pending">Pending</option>
                     <option value="Confirmed">Confirmed</option>
+                    <option value="Complete">Complete</option>
                     <option value="Rejected">Rejected</option>
                   </select>
                   <select
@@ -979,13 +1163,23 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
                   {/* Secondary Metrics */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="backdrop-blur-xl bg-gradient-to-br from-indigo-400/20 to-indigo-600/20 rounded-2xl p-6 border border-indigo-200/40 hover:shadow-lg transition-all">
+                    <div 
+                      onClick={() => setViewAnalytics('busiest-days')}
+                      className="backdrop-blur-xl bg-gradient-to-br from-indigo-400/20 to-indigo-600/20 rounded-2xl p-6 border border-indigo-200/40 hover:border-indigo-300/60 transition-all hover:shadow-lg cursor-pointer hover:scale-105 transform"
+                    >
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Completion Rate</p>
-                        <FaSmile className="text-indigo-500 text-lg" />
+                        <p className="text-slate-700 text-sm font-semibold">Busiest Day</p>
+                        <FaCalendar className="text-indigo-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.completionRate}%</p>
-                      <p className="text-xs text-slate-600 mt-2">of bookings confirmed</p>
+                      <p className="text-2xl font-bold text-slate-900 mt-3">
+                        {Object.entries(metrics.dayOfWeekCounts).reduce((a, b) => 
+                          metrics.dayOfWeekCounts[a[0] as keyof typeof metrics.dayOfWeekCounts] > 
+                          metrics.dayOfWeekCounts[b[0] as keyof typeof metrics.dayOfWeekCounts] ? a : b
+                        )[0]}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-2">
+                        {Math.max(...Object.values(metrics.dayOfWeekCounts))} bookings
+                      </p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-pink-400/20 to-pink-600/20 rounded-2xl p-6 border border-pink-200/40 hover:shadow-lg transition-all">
                       <div className="flex items-center justify-between mb-2">
@@ -1059,6 +1253,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                               className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"
                             >
                               <FaCheck /> Confirm Selected
+                            </button>
+                            <button
+                              onClick={() => bulkUpdateStatus('Complete')}
+                              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"
+                            >
+                              <FaCheck /> Complete Selected
                             </button>
                             <button
                               onClick={() => bulkUpdateStatus('Rejected')}
@@ -1155,6 +1355,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-md border ${
                                     booking.status === 'Confirmed'
                                       ? 'bg-green-100/80 text-green-700 border-green-300'
+                                      : booking.status === 'Complete'
+                                      ? 'bg-blue-100/80 text-blue-700 border-blue-300'
                                       : booking.status === 'Rejected'
                                       ? 'bg-red-100/80 text-red-700 border-red-300'
                                       : 'bg-yellow-100/80 text-yellow-700 border-yellow-300'
@@ -1247,8 +1449,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             {activeTab === 'services' && (
               <div className="px-6 py-12">
                 <h2 className="text-2xl font-bold text-slate-900 mb-8">🛠️ Service Management</h2>
-                <div className="mb-10 bg-white/60 p-6 rounded-2xl shadow-lg">
-                  <h3 className="text-xl font-semibold mb-4">
+                <div className="mb-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <h3 className="text-xl font-semibold mb-4 text-black">
                     {editingService ? 'Edit Service' : 'Add New Service'}
                   </h3>
                   <div className="flex flex-col md:flex-row gap-4">
@@ -1257,14 +1459,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       placeholder="Service title"
                       value={newServiceTitle}
                       onChange={(e) => setNewServiceTitle(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
                     />
                     <input
                       type="text"
                       placeholder="Price (e.g. $50)"
                       value={newServicePrice}
                       onChange={(e) => setNewServicePrice(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
                     />
                     <button
                       onClick={addService}
@@ -1286,15 +1488,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     )}
                   </div>
                 </div>
-                <div className="bg-white/50 p-6 rounded-2xl shadow-lg">
-                  <h3 className="text-xl font-semibold mb-4">Existing Services</h3>
+                <div className="bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <h3 className="text-xl font-semibold mb-4 text-black">Existing Services</h3>
                   {services.length === 0 ? (
-                    <p className="text-gray-600">No services available.</p>
+                    <p className="text-black">No services available.</p>
                   ) : (
                     <ul className="space-y-3">
                       {services.map((svc) => (
                         <li key={svc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
-                          <span className="font-medium text-gray-800">{svc.title} - {svc.price}</span>
+                          <span className="font-medium text-black">{svc.title} - {svc.price}</span>
                           <div className="flex gap-3">
                             <button
                               onClick={() => {
@@ -1351,8 +1553,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold text-slate-900 mb-2">Auto-refresh Interval</label>
-                      <select className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <label className="block text-sm font-semibold text-black mb-2">Auto-refresh Interval</label>
+                      <select className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 text-black">
                         <option value="30">30 seconds</option>
                         <option value="60">1 minute</option>
                         <option value="300">5 minutes</option>
@@ -1443,6 +1645,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <span className={`inline-block px-4 py-2 rounded-xl text-sm font-semibold backdrop-blur-md border ${
                             selectedBooking.status === 'Confirmed' 
                               ? 'bg-green-100/80 text-green-700 border-green-300'
+                              : selectedBooking.status === 'Complete'
+                              ? 'bg-blue-100/80 text-blue-700 border-blue-300'
                               : selectedBooking.status === 'Rejected'
                               ? 'bg-red-100/80 text-red-700 border-red-300'
                               : 'bg-yellow-100/80 text-yellow-700 border-yellow-300'
@@ -1462,6 +1666,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 px-4 rounded-xl font-semibold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-green-300 hover:border-green-400 disabled:border-gray-300"
                           >
                             <FaCheck /> Confirm
+                          </button>
+                          <button
+                            onClick={() => updateBookingStatus(selectedBooking.id, 'Complete')}
+                            disabled={selectedBooking.status === 'Complete'}
+                            className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 px-4 rounded-xl font-semibold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-blue-300 hover:border-blue-400 disabled:border-gray-300"
+                          >
+                            <FaCheck /> Complete
                           </button>
                           <button
                             onClick={() => updateBookingStatus(selectedBooking.id, 'Rejected')}

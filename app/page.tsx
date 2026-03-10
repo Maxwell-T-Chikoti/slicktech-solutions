@@ -76,7 +76,8 @@ const HomePage = () => {
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               <Link
                 href="/booking"
-                className="group bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-4 rounded-lg font-bold text-lg transition-all duration-300 inline-flex items-center justify-center glass-effect shadow-lg hover:shadow-2xl hover:scale-105 hover:-translate-y-2 btn-interactive transform"
+                className="group bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-black px-8 py-4 rounded-lg font-bold text-lg transition-all duration-300 inline-flex items-center justify-center glass-effect shadow-lg hover:shadow-2xl hover:scale-105 hover:-translate-y-2 btn-interactive transform drop-shadow-lg"
+                style={{ textShadow: '0 2px 4px rgba(255,255,255,0.5)' }}
               >
                 Get Started Now <FaArrowRight className="ml-2 group-hover:translate-x-2 transition-transform" />
               </Link>

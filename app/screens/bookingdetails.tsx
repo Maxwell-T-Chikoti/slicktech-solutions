@@ -300,6 +300,217 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
     }
   };
 
+  const downloadCompletionCertificate = async () => {
+    const pdf = new jsPDF('landscape');
+    
+    // Create a temporary div for certificate content
+    const certificateContent = document.createElement('div');
+    certificateContent.style.width = '297mm';
+    certificateContent.style.height = '210mm';
+    certificateContent.style.padding = '20mm';
+    certificateContent.style.fontFamily = 'Arial, sans-serif';
+    certificateContent.style.backgroundColor = '#ffffff';
+    certificateContent.style.position = 'absolute';
+    certificateContent.style.left = '-9999px';
+    certificateContent.style.top = '-9999px';
+    
+    const certificateHTML = `
+      <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border: 8px solid #1e40af; border-radius: 20px; padding: 40px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);">
+        
+        <!-- Header with Logo -->
+        <div style="margin-bottom: 30px;">
+          <img src="${SlickTechLogo.src}" alt="SlickTech Logo" style="height: 120px; margin-bottom: 20px;" />
+          <img src="${SlickTechLogo.src}" alt="SlickTech Logo" style="height: 60px; margin-bottom: 10px;" />
+          <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0; font-style: italic;">Professional Tech Solutions</p>
+        </div>
+        
+        <!-- Certificate Title -->
+        <div style="margin-bottom: 40px;">
+          <h2 style="color: #1e293b; font-size: 28px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 2px;">Certificate of Completion</h2>
+          <div style="width: 200px; height: 3px; background: linear-gradient(90deg, #3b82f6, #1d4ed8); margin: 0 auto;"></div>
+        </div>
+        
+        <!-- Main Content -->
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin-bottom: 40px;">
+          <p style="color: #374151; font-size: 18px; margin: 0 0 20px 0;">This is to certify that</p>
+          
+          <h3 style="color: #1e293b; font-size: 32px; font-weight: bold; margin: 0 0 20px 0; text-transform: uppercase; letter-spacing: 1px;">${booking.user_name || 'Valued Customer'}</h3>
+          
+          <p style="color: #374151; font-size: 18px; margin: 0 0 30px 0; line-height: 1.6;">
+            has successfully completed their technology consultation and solution implementation with <strong>SlickTech Solutions</strong>.
+          </p>
+          
+          <div style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 25px; border-radius: 15px; border: 2px solid #3b82f6; margin: 30px 0;">
+            <h4 style="color: #1e40af; font-size: 20px; font-weight: bold; margin: 0 0 15px 0;">Service Completed:</h4>
+            <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 10px 0;">${booking.service}</p>
+            <p style="color: #374151; font-size: 16px; margin: 0;">Completed on: ${new Date().toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}</p>
+          </div>
+          
+          <p style="color: #1e293b; font-size: 20px; font-weight: bold; margin: 30px 0; line-height: 1.6;">
+            🎉 <span style="color: #059669;">You are currently secured and protected by SlickTech Solutions!</span> 🎉
+          </p>
+          
+          <p style="color: #374151; font-size: 16px; margin: 20px 0; line-height: 1.6;">
+            This certificate confirms that all recommended solutions have been successfully implemented and your systems are now optimized for peak performance and security.
+          </p>
+        </div>
+        
+        <!-- Footer -->
+        <div style="margin-top: 40px; width: 100%;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <div style="text-align: left;">
+              <p style="color: #64748b; font-size: 12px; margin: 0;">Certificate ID: STC-${booking.id}-${Date.now()}</p>
+              <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0;">Issued: ${new Date().toLocaleDateString()}</p>
+            </div>
+            <div style="text-align: right;">
+              <div style="width: 150px; height: 60px; border-bottom: 2px solid #1e293b; margin-bottom: 5px;"></div>
+              <p style="color: #374151; font-size: 12px; margin: 0; font-weight: bold;">Authorized Signature</p>
+              <p style="color: #64748b; font-size: 10px; margin: 2px 0 0 0;">SlickTech Solutions</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Bottom Border -->
+        <div style="position: absolute; bottom: 20px; left: 20px; right: 20px; text-align: center;">
+          <p style="color: #64748b; font-size: 10px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">© 2026 SlickTech Technologies | All rights reserved</p>
+        </div>
+      </div>
+    `;
+    
+    certificateContent.innerHTML = certificateHTML;
+    
+    document.body.appendChild(certificateContent);
+    
+    try {
+      const canvas = await html2canvas(certificateContent, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 1123,
+        height: 794
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', 0, 0, 297, 210);
+      
+      pdf.save(`SlickTech_Completion_Certificate_${booking.id}.pdf`);
+    } catch (error) {
+      console.error('Error generating certificate:', error);
+      alert('Failed to generate certificate. Please try again.');
+    } finally {
+      document.body.removeChild(certificateContent);
+    }
+  };
+
+  // const downloadCompletionCertificate = async () => {
+  //   const pdf = new jsPDF();
+    
+  //   // Create a temporary div for certificate content
+  //   const certificateContent = document.createElement('div');
+  //   certificateContent.style.width = '210mm';
+  //   certificateContent.style.height = '297mm';
+  //   certificateContent.style.padding = '20mm';
+  //   certificateContent.style.fontFamily = 'Arial, sans-serif';
+  //   certificateContent.style.backgroundColor = '#ffffff';
+  //   certificateContent.style.position = 'absolute';
+  //   certificateContent.style.left = '-9999px';
+  //   certificateContent.style.top = '-9999px';
+  //   certificateContent.innerHTML = `
+  //     <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border: 8px solid #1e40af; border-radius: 20px; padding: 40px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);">
+        
+  //       <!-- Header with Logo -->
+  //       <div style="margin-bottom: 30px;">
+  //         <img src="${SlickTechLogo.src}" alt="SlickTech Logo" style="height: 80px; margin-bottom: 20px;" />
+  //         <h1 style="color: #1e293b; font-size: 36px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 3px;">SLICKTECH</h1>
+  //         <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0; font-style: italic;">Professional Tech Solutions</p>
+  //       </div>
+        
+  //       <!-- Certificate Title -->
+  //       <div style="margin-bottom: 40px;">
+  //         <h2 style="color: #1e293b; font-size: 28px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 2px;">Certificate of Completion</h2>
+  //         <div style="width: 200px; height: 3px; background: linear-gradient(90deg, #3b82f6, #1d4ed8); margin: 0 auto;"></div>
+  //       </div>
+        
+  //       <!-- Main Content -->
+  //       <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; margin-bottom: 40px;">
+  //         <p style="color: #374151; font-size: 18px; margin: 0 0 20px 0;">This is to certify that</p>
+          
+  //         <h3 style="color: #1e293b; font-size: 32px; font-weight: bold; margin: 0 0 20px 0; text-transform: uppercase; letter-spacing: 1px;">${booking.user_name || 'Valued Customer'}</h3>
+          
+  //         <p style="color: #374151; font-size: 18px; margin: 0 0 30px 0; line-height: 1.6;">
+  //           has successfully completed their technology consultation and solution implementation with <strong>SlickTech Solutions</strong>.
+  //         </p>
+          
+  //         <div style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 25px; border-radius: 15px; border: 2px solid #3b82f6; margin: 30px 0;">
+  //           <h4 style="color: #1e40af; font-size: 20px; font-weight: bold; margin: 0 0 15px 0;">Service Completed:</h4>
+  //           <p style="color: #1e293b; font-size: 18px; font-weight: bold; margin: 0 0 10px 0;">${booking.service}</p>
+  //           <p style="color: #374151; font-size: 16px; margin: 0;">Completed on: ${new Date().toLocaleDateString('en-US', { 
+  //             year: 'numeric', 
+  //             month: 'long', 
+  //             day: 'numeric' 
+  //           })}</p>
+  //         </div>
+          
+  //         <p style="color: #1e293b; font-size: 20px; font-weight: bold; margin: 30px 0; line-height: 1.6;">
+  //           🎉 <span style="color: #059669;">You are currently secured and protected by SlickTech Solutions!</span> 🎉
+  //         </p>
+          
+  //         <p style="color: #374151; font-size: 16px; margin: 20px 0; line-height: 1.6;">
+  //           This certificate confirms that all recommended solutions have been successfully implemented and your systems are now optimized for peak performance and security.
+  //         </p>
+  //       </div>
+        
+  //       <!-- Footer -->
+  //       <div style="margin-top: 40px; width: 100%;">
+  //       <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+  //         <div style="text-align: left;">
+  //           <p style="color: #64748b; font-size: 12px; margin: 0;">Certificate ID: STC-${booking.id}-${Date.now()}</p>
+  //           <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0;">Issued: ${new Date().toLocaleDateString()}</p>
+  //         </div>
+  //         <div style="text-align: right;">
+  //           <div style="width: 150px; height: 60px; border-bottom: 2px solid #1e293b; margin-bottom: 5px;"></div>
+  //           <p style="color: #374151; font-size: 12px; margin: 0; font-weight: bold;">Authorized Signature</p>
+  //           <p style="color: #64748b; font-size: 10px; margin: 2px 0 0 0;">SlickTech Solutions</p>
+  //         </div>
+  //       </div>
+  //     </div>
+        
+  //       <!-- Bottom Border -->
+  //       <div style="position: absolute; bottom: 20px; left: 20px; right: 20px; text-align: center;">
+  //         <p style="color: #64748b; font-size: 10px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">© 2026 SlickTech Technologies | All rights reserved</p>
+  //       </div>
+  //     </div>
+  //   `;
+    
+  //   document.body.appendChild(certificateContent);
+    
+  //   try {
+  //     const canvas = await html2canvas(certificateContent, {
+  //       scale: 2,
+  //       useCORS: true,
+  //       allowTaint: true,
+  //       backgroundColor: '#ffffff',
+  //       width: 794,
+  //       height: 1123
+  //     });
+      
+  //     const imgData = canvas.toDataURL('image/png');
+  //     pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+      
+  //     pdf.save(`SlickTech_Completion_Certificate_${booking.id}.pdf`);
+  //   } catch (error) {
+  //     console.error('Error generating certificate:', error);
+  //     alert('Failed to generate certificate. Please try again.');
+  //   } finally {
+  //     document.body.removeChild(certificateContent);
+  //   }
+  // };
+
   if (!booking) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -469,18 +680,27 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
             </div>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex gap-2">
             <button
               onClick={downloadBookingPDF}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 px-6 rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
             >
-              <FaDownload className="text-sm" />
+              <FaDownload className="text-lg" />
               Download PDF
             </button>
+            {booking.status === 'Complete' && (
+              <button
+                onClick={downloadCompletionCertificate}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-black py-1.5 px-3 rounded-xl transition-all shadow-lg shadow-purple-200 flex items-center justify-center gap-2"
+              >
+                <FaDownload className="text-lg" />
+                Download Certificate
+              </button>
+            )}
             <button
               onClick={handleStartReschedule}
               disabled={booking.reschedules >= 1}
-              className={`flex-1 py-3 px-6 font-black rounded-xl transition-all ${booking.reschedules >= 1
+              className={`flex-1 py-1.5 px-3 font-black rounded-xl transition-all ${booking.reschedules >= 1
                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200'}`}
             >
@@ -488,7 +708,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
             </button>
             <button
               onClick={handleCancel}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-3 px-6 rounded-xl transition-all shadow-lg shadow-red-200"
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-1.5 px-3 rounded-xl transition-all shadow-lg shadow-red-200"
             >
               Cancel
             </button>
