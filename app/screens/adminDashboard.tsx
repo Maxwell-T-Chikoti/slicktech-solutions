@@ -37,7 +37,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newBookingAlert, setNewBookingAlert] = useState<BookingWithProfile | null>(null);
   const [selectedBookings, setSelectedBookings] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'activity' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'activity' | 'settings' | 'services'>('dashboard');
   const [customers, setCustomers] = useState<any[]>([]);
   const [activityLog, setActivityLog] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -60,6 +60,23 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newServiceTitle, setNewServiceTitle] = useState<string>('');
   const [newServicePrice, setNewServicePrice] = useState<string>('');
   const [editingService, setEditingService] = useState<any | null>(null);
+
+  // fetch services function
+  const fetchServices = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .order('title', { ascending: true });
+      if (error) {
+        console.error('Error fetching services:', error);
+        return;
+      }
+      setServices(data || []);
+    } catch (e) {
+      console.error('Error fetching services:', e);
+    }
+  };
 
   const fetchBookingsWithProfiles = async () => {
     setLoading(true);
@@ -164,23 +181,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   useEffect(() => {
-    // fetch services function (declare early so it can be called below)
-    const fetchServices = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('services')
-          .select('*')
-          .order('title', { ascending: true });
-        if (error) {
-          console.error('Error fetching services:', error);
-          return;
-        }
-        setServices(data || []);
-      } catch (e) {
-        console.error('Error fetching services:', e);
-      }
-    };
-
     const checkAuthAndFetch = async () => {
       const {
         data: { user },
