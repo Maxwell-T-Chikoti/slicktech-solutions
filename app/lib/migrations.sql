@@ -4,6 +4,28 @@ ALTER TABLE profiles ADD COLUMN password_hash TEXT;
 -- Add role column to profiles table to differentiate between users and admins
 ALTER TABLE profiles ADD COLUMN role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin'));
 
+-- Create services table
+CREATE TABLE services (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  price TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable RLS on services table
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policy: Only admins can manage services
+CREATE POLICY "only admins can manage services"
+  ON services FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles 
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  );
+
 -- Optional: Create a function to make it easier to promote/demote users
 CREATE OR REPLACE FUNCTION set_admin_role(user_id UUID, is_admin BOOLEAN)
 RETURNS VOID

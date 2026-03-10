@@ -278,7 +278,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     if (selectedBookings.length === filteredBookings.length) {
       setSelectedBookings([]);
     } else {
-      setSelectedBookings(filteredBookings.map(b => b.id));
+      setSelectedBookings(filteredBookings.map((b: any) => b.id));
     }
   };
 
@@ -358,7 +358,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchServices();
     } catch (err) {
       console.error('Error adding/updating service:', err);
-      addNotification('Failed to save service', 'error');
+      addNotification(`Failed to save service: ${(err as any)?.message || 'Unknown error'}`, 'error');
     }
   };
 
@@ -380,7 +380,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       logActivity(`Deleted service id ${id}`);
     } catch (err) {
       console.error('Error deleting service:', err);
-      addNotification('Failed to delete service', 'error');
+      addNotification(`Failed to delete service: ${(err as any)?.message || 'Unknown error'}`, 'error');
     }
   };
 

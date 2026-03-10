@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, type JSX } from 'react';
 import { FaBars, FaUser, FaCog, FaSignOutAlt } from 'react-icons/fa';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 

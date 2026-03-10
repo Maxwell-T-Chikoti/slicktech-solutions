@@ -19,6 +19,9 @@
     "recharts": "^3.7.0",
     "resend": "^6.9.2"
   },
+  "engines": {
+    "node": "18.x"
+  },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.9",
     "@tailwindcss/postcss": "^4",
@@ -28,6 +31,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "5.9.3"
   }
 }
