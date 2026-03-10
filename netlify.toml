@@ -3,17 +3,24 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "18"
+  # Specify Node version consistent with project requirements (>=20.9.0)
+  NODE_VERSION = "20.9.0"
   SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 [[headers]]
-  for = "/_next/static/*"
+  for = "/_next/static/js/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
     Content-Type = "application/javascript"
+
+[[headers]]
+  for = "/_next/static/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Content-Type = "text/css"
 
 [[headers]]
   for = "/_next/*"
