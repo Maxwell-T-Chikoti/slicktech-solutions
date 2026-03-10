@@ -20,7 +20,7 @@
     "resend": "^6.9.2"
   },
   "engines": {
-    "node": "18.x"
+    "node": ">=20.9.0"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.9",
