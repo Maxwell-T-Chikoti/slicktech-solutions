@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
-import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { downloadInvoicePDF } from '@/app/lib/pdfUtils';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
+import { useTheme } from '../components/ThemeProvider';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -43,6 +44,7 @@ type DemandModelSummary = {
 };
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
+  const { theme, toggleTheme } = useTheme();
   const [bookings, setBookings] = useState<BookingWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(true);
@@ -1402,6 +1404,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     title="Settings"
                   >
                     <FaCog />
+                  </button>
+                  <button
+                    onClick={toggleTheme}
+                    className="bg-slate-600 hover:bg-slate-700 text-white font-semibold p-2 rounded-full transition-all hover:scale-110"
+                    title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+                  >
+                    {theme === 'light' ? <FaMoon /> : <FaSun />}
                   </button>
                   <button
                     onClick={onLogout}

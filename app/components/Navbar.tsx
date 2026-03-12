@@ -115,6 +115,7 @@ const Navbar = ({ currentPage = 'home', onNavigate, onLogout }: NavbarProps) => 
           🤖
         </button>
         <button
+          onClick={toggleTheme}
           className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center text-slate-700 cursor-pointer hover:bg-slate-300 transition-colors"
           title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
         >
