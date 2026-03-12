@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, type JSX } from 'react';
+import Link from 'next/link';
 import { FaBars, FaUser, FaCog, FaSignOutAlt, FaBell, FaMoon, FaSun } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
 import { useTheme } from './ThemeProvider';
+import { useChatbot } from '@/app/context/ChatbotContext';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 
 interface NavbarProps {
@@ -19,6 +21,7 @@ const Navbar = ({ currentPage = 'home', onNavigate, onLogout }: NavbarProps) => 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const { theme, toggleTheme } = useTheme();
+  const { openChat } = useChatbot();
 
   const fetchNotifications = async () => {
     const userSession = window.localStorage.getItem('slicktech_user');
@@ -95,12 +98,23 @@ const Navbar = ({ currentPage = 'home', onNavigate, onLogout }: NavbarProps) => 
         >
           My Account
         </button>
+        <button
+          onClick={openChat}
+          className="hover:text-blue-600 transition-colors flex items-center gap-1"
+        >
+          🤖 AI Chat
+        </button>
       </div>
 
       <div className="flex items-center space-x-4">
         <button
-          type="button"
-          onClick={toggleTheme}
+          onClick={openChat}
+          className="text-lg text-slate-700 hover:text-blue-600 transition-colors"
+          title="Chat with AI"
+        >
+          🤖
+        </button>
+        <button
           className="w-10 h-10 bg-slate-200 rounded-xl flex items-center justify-center text-slate-700 cursor-pointer hover:bg-slate-300 transition-colors"
           title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
         >

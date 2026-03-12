@@ -11,6 +11,15 @@ interface NewBookingScreenProps {
   selectedService?: string;
 }
 
+const TIME_SLOTS = ['9:00 AM', '10:00 AM', '11:00 AM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM'];
+
+type SuggestedSlot = {
+  date: string;
+  time: string;
+  reason: string;
+  cancellationRisk: number;
+};
+
 const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingScreenProps) => {
   const [bookingData, setBookingData] = useState({
     service: selectedService || '',
@@ -28,6 +37,9 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [services, setServices] = useState<{title: string; price: string}[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
+  const [suggestedSlot, setSuggestedSlot] = useState<SuggestedSlot | null>(null);
+  const [backupSlots, setBackupSlots] = useState<SuggestedSlot[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -117,6 +129,139 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return selectedDate < today;
+  };
+
+  const parseBookingDate = (rawDate: string) => {
+    const parsed = new Date(rawDate);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+    return null;
+  };
+
+  const toDisplayDate = (dateObj: Date) => {
+    return `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}`;
+  };
+
+  const toIsoDate = (dateObj: Date) => {
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+  };
+
+  const handleGenerateAISuggestion = async () => {
+    if (!bookingData.service) {
+      alert('Please select a service first so we can generate a smart schedule suggestion.');
+      return;
+    }
+
+    setIsSuggesting(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const { data: bookingsData } = await supabase
+        .from('bookings')
+        .select('date, time, service, user_id, status, reschedules')
+        .in('status', ['Pending', 'Confirmed', 'Complete']);
+
+      const allBookings = Array.isArray(bookingsData) ? bookingsData : [];
+      const normalizedBookings = allBookings
+        .map((booking: any) => {
+          const parsedDate = parseBookingDate(booking.date);
+          return {
+            ...booking,
+            parsedDate,
+          };
+        })
+        .filter((booking: any) => booking.parsedDate);
+
+      const serviceBookings = normalizedBookings.filter((b: any) => b.service === bookingData.service);
+      const userServiceBookings = serviceBookings.filter((b: any) => user && b.user_id === user.id);
+
+      const userPreferredSlots = new Set(userServiceBookings.map((b: any) => b.time));
+
+      try {
+        const aiPayload = {
+          service: bookingData.service,
+          today: new Date().toISOString(),
+          availableTimeSlots: TIME_SLOTS,
+          blockedDates: Array.from(blockedDates.values()),
+          userPreferredSlots: Array.from(userPreferredSlots.values()),
+          serviceBookings: serviceBookings
+            .slice(-300)
+            .map((b: any) => ({
+              date: toDisplayDate(b.parsedDate),
+              isoDate: toIsoDate(b.parsedDate),
+              time: b.time,
+              status: b.status,
+              reschedules: Number(b.reschedules || 0),
+            })),
+        };
+
+        const aiResponse = await fetch('/api/ai-insights', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'scheduling',
+            payload: aiPayload,
+          }),
+        });
+
+        if (!aiResponse.ok) {
+          throw new Error('AI scheduling endpoint is unavailable.');
+        }
+
+        const aiJson = await aiResponse.json();
+        const aiResult = aiJson?.result;
+
+        const normalizeSlot = (slot: any): SuggestedSlot | null => {
+          if (!slot || typeof slot !== 'object') return null;
+          if (!slot.date || !slot.time) return null;
+          const risk = Math.min(100, Math.max(0, Number(slot.cancellationRisk ?? 20)));
+          return {
+            date: String(slot.date),
+            time: String(slot.time),
+            reason: String(slot.reason || 'AI-recommended slot based on demand and history.'),
+            cancellationRisk: Math.round(risk),
+          };
+        };
+
+        const primary = normalizeSlot(aiResult?.primary);
+        const backups = Array.isArray(aiResult?.backups)
+          ? aiResult.backups.map(normalizeSlot).filter((slot: SuggestedSlot | null) => !!slot) as SuggestedSlot[]
+          : [];
+
+        if (primary) {
+          setSuggestedSlot(primary);
+          setBackupSlots(backups.slice(0, 2));
+          return;
+        }
+
+        setSuggestedSlot(null);
+        setBackupSlots([]);
+        alert('AI responded but did not return a valid suggestion.');
+        return;
+      } catch (aiError) {
+        console.warn('AI model scheduling suggestion failed:', aiError);
+        setSuggestedSlot(null);
+        setBackupSlots([]);
+        alert('AI scheduling is unavailable right now. Fallback is disabled for testing.');
+        return;
+      }
+    } catch (error) {
+      console.error('Error generating AI schedule suggestion:', error);
+      alert('Unable to generate a suggestion right now. Please try again.');
+    } finally {
+      setIsSuggesting(false);
+    }
+  };
+
+  const applySuggestedSlot = (slot: SuggestedSlot) => {
+    if (!slot) return;
+    setBookingData((prev) => ({
+      ...prev,
+      date: slot.date,
+      time: slot.time,
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -546,6 +691,55 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3">Pick Appointment Date and Time</label>
                   <div className="bg-white rounded-lg p-4 border border-gray-300">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <p className="text-xs text-gray-600">Get a smart recommendation based on current availability and your booking patterns.</p>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAISuggestion}
+                        disabled={isSuggesting}
+                        className={`px-3 py-2 rounded text-xs font-semibold transition-colors ${
+                          isSuggesting
+                            ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                            : 'bg-blue-700 hover:bg-blue-800 text-white'
+                        }`}
+                      >
+                        {isSuggesting ? 'Analyzing...' : 'Get AI Suggestion'}
+                      </button>
+                    </div>
+
+                    {suggestedSlot && (
+                      <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3">
+                        <p className="text-sm font-semibold text-emerald-800">Recommended: {suggestedSlot.date} at {suggestedSlot.time}</p>
+                        <p className="text-xs text-emerald-700 mt-1">Why: {suggestedSlot.reason}</p>
+                        <p className="text-xs text-emerald-700 mt-1">Predicted cancellation risk: {suggestedSlot.cancellationRisk}%</p>
+                        <button
+                          type="button"
+                          onClick={() => applySuggestedSlot(suggestedSlot)}
+                          className="mt-3 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+                        >
+                          Apply suggestion
+                        </button>
+
+                        {backupSlots.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-emerald-200">
+                            <p className="text-xs font-semibold text-emerald-800 mb-2">Backup slots (if this time becomes unavailable):</p>
+                            <div className="flex flex-wrap gap-2">
+                              {backupSlots.map((slot, index) => (
+                                <button
+                                  key={`${slot.date}-${slot.time}-${index}`}
+                                  type="button"
+                                  onClick={() => applySuggestedSlot(slot)}
+                                  className="px-3 py-2 rounded border border-emerald-300 text-emerald-800 bg-white hover:bg-emerald-100 text-xs font-semibold"
+                                >
+                                  {slot.date} • {slot.time}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Simple date picker */}
                     <div className="flex items-center justify-between mb-4">
                       <button type="button" onClick={handlePreviousMonth} className="text-gray-600 hover:text-slate-900">
@@ -606,13 +800,9 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                         onChange={handleInputChange}
                         className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-blue-500"
                       >
-                        <option>9:00 AM</option>
-                        <option>10:00 AM</option>
-                        <option>11:00 AM</option>
-                        <option>1:00 PM</option>
-                        <option>2:00 PM</option>
-                        <option>3:00 PM</option>
-                        <option>4:00 PM</option>
+                        {TIME_SLOTS.map((slot) => (
+                          <option key={slot}>{slot}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
