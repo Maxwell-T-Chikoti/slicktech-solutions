@@ -68,6 +68,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [services, setServices] = useState<any[]>([]);
   const [newServiceTitle, setNewServiceTitle] = useState<string>('');
   const [newServicePrice, setNewServicePrice] = useState<string>('');
+  const [newServiceDescription, setNewServiceDescription] = useState<string>('');
+  const [newServiceFeatures, setNewServiceFeatures] = useState<string[]>([]);
+  const [newFeatureInput, setNewFeatureInput] = useState<string>('');
+  const [newServiceGradient, setNewServiceGradient] = useState<string>('linear-gradient(135deg, #60a5fa, #2563eb)');
   const [editingService, setEditingService] = useState<any | null>(null);
 
   // fetch services function
@@ -356,7 +360,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         // update existing
         const { error } = await supabase
           .from('services')
-          .update({ title: newServiceTitle.trim(), price: newServicePrice.trim() })
+          .update({
+            title: newServiceTitle.trim(),
+            price: newServicePrice.trim(),
+            description: newServiceDescription.trim(),
+            features: newServiceFeatures,
+            image: newServiceGradient,
+          })
           .eq('id', editingService.id);
         if (error) throw error;
         addNotification(`Service "${newServiceTitle}" updated`, 'success');
@@ -364,21 +374,38 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       } else {
         const { error } = await supabase
           .from('services')
-          .insert([{ title: newServiceTitle.trim(), price: newServicePrice.trim() }]);
+          .insert([{
+            title: newServiceTitle.trim(),
+            price: newServicePrice.trim(),
+            description: newServiceDescription.trim(),
+            features: newServiceFeatures,
+            image: newServiceGradient,
+          }]);
         if (error) throw error;
         addNotification(`Service "${newServiceTitle}" added`, 'success');
         logActivity(`Added service ${newServiceTitle}`);
       }
       setNewServiceTitle('');
       setNewServicePrice('');
+      setNewServiceDescription('');
+      setNewServiceFeatures([]);
+      setNewFeatureInput('');
+      setNewServiceGradient('linear-gradient(135deg, #60a5fa, #2563eb)');
       setEditingService(null);
       fetchServices();
     } catch (err) {
-      console.error('Error adding/updating service:', err);
-      if ((err as any)?.message?.includes('row-level security')) {
-        addNotification('Failed to save service: row-level security prevented the action. Make sure you are logged in as an admin and the policies allow inserts.', 'error');
+      // Supabase PostgrestError has non-enumerable props — extract them explicitly
+      const pgErr = err as any;
+      const msg: string = pgErr?.message ?? pgErr?.msg ?? String(err);
+      const code: string = pgErr?.code ?? '';
+      const details: string = pgErr?.details ?? '';
+      const hint: string = pgErr?.hint ?? '';
+      console.error('Error adding/updating service:', { message: msg, code, details, hint });
+      const isRls = msg.toLowerCase().includes('row-level security') || code === '42501';
+      if (isRls) {
+        addNotification('Permission denied: RLS policy blocked the action. Ensure your admin account has the correct role.', 'error');
       } else {
-        addNotification(`Failed to save service: ${(err as any)?.message || 'Unknown error'}`, 'error');
+        addNotification(`Failed to save service: ${msg || 'Unknown error'}`, 'error');
       }
     }
   };
@@ -1474,39 +1501,138 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   <h3 className="text-xl font-semibold mb-4 text-black">
                     {editingService ? 'Edit Service' : 'Add New Service'}
                   </h3>
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <input
-                      type="text"
-                      placeholder="Service title"
-                      value={newServiceTitle}
-                      onChange={(e) => setNewServiceTitle(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <input
+                        type="text"
+                        placeholder="Service title"
+                        value={newServiceTitle}
+                        onChange={(e) => setNewServiceTitle(e.target.value)}
+                        className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Price (e.g. R500)"
+                        value={newServicePrice}
+                        onChange={(e) => setNewServicePrice(e.target.value)}
+                        className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                      />
+                    </div>
+                    <textarea
+                      placeholder="Description (e.g. Optimize your network for maximum speed and reliability...)"
+                      value={newServiceDescription}
+                      onChange={(e) => setNewServiceDescription(e.target.value)}
+                      rows={3}
+                      className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500 resize-none"
                     />
-                    <input
-                      type="text"
-                      placeholder="Price (e.g. $50)"
-                      value={newServicePrice}
-                      onChange={(e) => setNewServicePrice(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
-                    />
-                    <button
-                      onClick={addService}
-                      className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold"
-                    >
-                      {editingService ? 'Save Changes' : 'Add Service'}
-                    </button>
-                    {editingService && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Features</p>
+                      <div className="flex gap-2 mb-2">
+                        <input
+                          type="text"
+                          placeholder="Add a feature (e.g. Network analysis)"
+                          value={newFeatureInput}
+                          onChange={(e) => setNewFeatureInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const v = newFeatureInput.trim();
+                              if (v) { setNewServiceFeatures(prev => [...prev, v]); setNewFeatureInput(''); }
+                            }
+                          }}
+                          className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const v = newFeatureInput.trim();
+                            if (v) { setNewServiceFeatures(prev => [...prev, v]); setNewFeatureInput(''); }
+                          }}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {newServiceFeatures.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {newServiceFeatures.map((f, i) => (
+                            <span key={i} className="flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-sm">
+                              {f}
+                              <button
+                                type="button"
+                                onClick={() => setNewServiceFeatures(prev => prev.filter((_, idx) => idx !== i))}
+                                className="ml-1 text-blue-400 hover:text-red-500 font-bold leading-none"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Card Gradient Colour</p>
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { label: 'Blue',        value: 'linear-gradient(135deg, #60a5fa, #2563eb)' },
+                          { label: 'Purple',      value: 'linear-gradient(135deg, #a78bfa, #7c3aed)' },
+                          { label: 'Red',         value: 'linear-gradient(135deg, #f87171, #dc2626)' },
+                          { label: 'Green',       value: 'linear-gradient(135deg, #4ade80, #16a34a)' },
+                          { label: 'Orange',      value: 'linear-gradient(135deg, #fb923c, #ea580c)' },
+                          { label: 'Yellow',      value: 'linear-gradient(135deg, #fbbf24, #d97706)' },
+                          { label: 'Pink',        value: 'linear-gradient(135deg, #f472b6, #db2777)' },
+                          { label: 'Teal',        value: 'linear-gradient(135deg, #2dd4bf, #0d9488)' },
+                          { label: 'Indigo',      value: 'linear-gradient(135deg, #818cf8, #4338ca)' },
+                          { label: 'Dark Blue',   value: 'linear-gradient(135deg, #3b82f6, #1e3a8a)' },
+                          { label: 'Slate',       value: 'linear-gradient(135deg, #94a3b8, #334155)' },
+                          { label: 'Rose Gold',   value: 'linear-gradient(135deg, #fda4af, #e11d48)' },
+                        ].map((g) => (
+                          <button
+                            key={g.value}
+                            type="button"
+                            title={g.label}
+                            onClick={() => setNewServiceGradient(g.value)}
+                            style={{ background: g.value }}
+                            className={`w-10 h-10 rounded-full border-4 transition-all ${
+                              newServiceGradient === g.value
+                                ? 'border-slate-900 scale-110 shadow-lg'
+                                : 'border-transparent hover:border-slate-400'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div
+                          style={{ background: newServiceGradient }}
+                          className="w-32 h-10 rounded-lg shadow-inner"
+                        />
+                        <span className="text-sm text-gray-500">Preview</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
                       <button
-                        onClick={() => {
-                          setEditingService(null);
-                          setNewServiceTitle('');
-                          setNewServicePrice('');
-                        }}
-                        className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold"
+                        onClick={addService}
+                        className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-lg font-semibold"
                       >
-                        Cancel
+                        {editingService ? 'Save Changes' : 'Add Service'}
                       </button>
-                    )}
+                      {editingService && (
+                        <button
+                          onClick={() => {
+                            setEditingService(null);
+                            setNewServiceTitle('');
+                            setNewServicePrice('');
+                            setNewServiceDescription('');
+                            setNewServiceFeatures([]);
+                            setNewFeatureInput('');
+                            setNewServiceGradient('linear-gradient(135deg, #60a5fa, #2563eb)');
+                          }}
+                          className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
@@ -1517,13 +1643,20 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <ul className="space-y-3">
                       {services.map((svc) => (
                         <li key={svc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
-                          <span className="font-medium text-black">{svc.title} - {svc.price}</span>
+                          <div className="flex items-center gap-3">
+                            <div style={{ background: svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)' }} className="w-8 h-8 rounded-full flex-shrink-0" />
+                            <span className="font-medium text-black">{svc.title} - {svc.price}</span>
+                          </div>
                           <div className="flex gap-3">
                             <button
                               onClick={() => {
                                 setEditingService(svc);
                                 setNewServiceTitle(svc.title);
                                 setNewServicePrice(svc.price);
+                                setNewServiceDescription(svc.description || '');
+                                setNewServiceFeatures(Array.isArray(svc.features) ? svc.features : []);
+                                setNewFeatureInput('');
+                                setNewServiceGradient(svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)');
                               }}
                               className="text-blue-600 hover:text-blue-800"
                               title="Edit"

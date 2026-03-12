@@ -14,6 +14,7 @@ interface NewBookingScreenProps {
 const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingScreenProps) => {
   const [bookingData, setBookingData] = useState({
     service: selectedService || '',
+    price: '',
     date: '',
     time: '9:00 AM',
     extraServices: '',
@@ -24,7 +25,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [services, setServices] = useState<string[]>([]);
+  const [services, setServices] = useState<{title: string; price: string}[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   
   // Date picker state
@@ -35,13 +36,13 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   // fetch services from database
   React.useEffect(() => {
     const fetch = async () => {
-      const { data, error } = await supabase.from('services').select('title').order('id');
+      const { data, error } = await supabase.from('services').select('title, price').order('id');
       if (error) {
         console.error('Error fetching services in newbooking:', error);
         console.error('Error JSON:', JSON.stringify(error, null, 2));
         console.error('error details:', error);
       } else if (data) {
-        setServices(data.map((s: any) => s.title));
+        setServices(data.map((s: any) => ({ title: s.title, price: s.price || '' })));
       }
       setLoadingServices(false);
       // Show loading animation for at least 1 second
@@ -55,10 +56,19 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setBookingData({
-      ...bookingData,
-      [name]: value
-    });
+    if (name === 'service') {
+      const matched = services.find(s => s.title === value);
+      setBookingData({
+        ...bookingData,
+        service: value,
+        price: matched?.price || ''
+      });
+    } else {
+      setBookingData({
+        ...bookingData,
+        [name]: value
+      });
+    }
   };
 
   const handleDateChange = (date: string) => {
@@ -127,7 +137,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         status: 'Pending',
         reschedules: 0,
         location: '',
-        price: '',
+        price: bookingData.price,
       };
 
       if (user) {
@@ -470,8 +480,8 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                   >
                     <option value="">Choose a service...</option>
                     {services.map((service) => (
-                      <option key={service} value={service}>
-                        {service}
+                      <option key={service.title} value={service.title}>
+                        {service.title}{service.price ? ` — ${service.price}` : ''}
                       </option>
                     ))}
                   </select>

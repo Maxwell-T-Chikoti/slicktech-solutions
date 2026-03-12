@@ -324,7 +324,7 @@ const HomePage = () => {
 
           <div className="border-t border-slate-800 pt-8">
             <div className="flex justify-between items-center">
-              <p className="text-slate-400">&copy; 2026 SlickTech Solutions. All rights reserved.</p>
+              <p className="text-slate-400">&copy; 2026 Swiftspire Technologies. All rights reserved.</p>
               <div className="flex gap-4">
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="w-10 h-10 rounded-full bg-slate-800 hover:bg-blue-600 transition-colors cursor-pointer flex items-center justify-center hover:scale-110 transform duration-300">

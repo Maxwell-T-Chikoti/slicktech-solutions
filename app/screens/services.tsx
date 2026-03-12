@@ -24,15 +24,15 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Define gradient classes for each service
-  const gradients: { [key: number]: string } = {
-    1: 'bg-gradient-to-br from-blue-400 to-blue-600',
-    2: 'bg-gradient-to-br from-purple-400 to-purple-600',
-    3: 'bg-gradient-to-br from-red-400 to-red-600',
-    4: 'bg-gradient-to-br from-green-400 to-green-600',
-    5: 'bg-gradient-to-br from-yellow-400 to-yellow-600',
-    6: 'bg-gradient-to-br from-pink-400 to-pink-600',
-  };
+  // Fallback gradients by index for services without a stored image
+  const fallbackGradients = [
+    'linear-gradient(135deg, #60a5fa, #2563eb)',
+    'linear-gradient(135deg, #a78bfa, #7c3aed)',
+    'linear-gradient(135deg, #f87171, #dc2626)',
+    'linear-gradient(135deg, #4ade80, #16a34a)',
+    'linear-gradient(135deg, #fbbf24, #d97706)',
+    'linear-gradient(135deg, #f472b6, #db2777)',
+  ];
 
   useEffect(() => {
     const fetchServices = async () => {
@@ -160,9 +160,9 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
         </div>
           
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((service) => (
+          {services.map((service, idx) => (
             <div key={service.id} className="bg-white border-2 border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm hover:shadow-md hover:border-blue-300 transition-all group">
-              <div className={`h-48 ${gradients[service.id] || 'bg-slate-400'} flex items-center justify-center text-white text-center p-4 relative`}>
+              <div className="h-48 flex items-center justify-center text-white text-center p-4 relative" style={{ background: service.image || fallbackGradients[idx % fallbackGradients.length] }}>
                 <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
                 <div className="relative z-10">
                   {service.id !== 3 ? (
