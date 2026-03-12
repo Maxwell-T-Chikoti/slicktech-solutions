@@ -9,6 +9,7 @@ import BookingsScreen from './bookings';
 import ProfileScreen from './profile';
 import NewBookingScreen from './newbooking';
 import BookingDetails from './bookingdetails';
+import MyAccount from './myaccount';
 
 interface UserDashboardProps {
   onLogout?: () => void;
@@ -95,6 +96,7 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
   if (currentPage === 'bookingdetails') return <BookingDetails booking={selectedBooking} setBookings={setBookings} onNavigate={handleNavigate} onLogout={handleLogout} startReschedule={initialReschedule} />;
   if (currentPage === 'profile') return <ProfileScreen onNavigate={handleNavigate} onLogout={handleLogout} />;
   if (currentPage === 'newbooking') return <NewBookingScreen onNavigate={handleNavigate} onLogout={handleLogout} selectedService={selectedService} />;
+  if (currentPage === 'myaccount') return <MyAccount onNavigate={handleNavigate} onLogout={handleLogout} setBookings={setBookings} />;
 
   if (isLoading) {
     return (

@@ -25,6 +25,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   // bookedSlots: a Set of "date||time" strings pulled directly from DB
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
 
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -79,28 +80,32 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   const fetchBookedSlots = async () => {
     setLoadingSlots(true);
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('date, time, status, id')
-        .eq('status', 'Confirmed')
-        .neq('id', booking.id);
+      const [bookingsRes, blockedRes] = await Promise.all([
+        supabase
+          .from('bookings')
+          .select('date, time, status, id')
+          .eq('status', 'Confirmed')
+          .neq('id', booking.id),
+        supabase.from('blocked_dates').select('date')
+      ]);
 
-      if (error) {
-        console.error('Error fetching booked slots:', error);
-        return;
+      if (bookingsRes.error) {
+        console.error('Error fetching booked slots:', bookingsRes.error);
+      } else {
+        console.log('Raw DB confirmed bookings (excluding current):', bookingsRes.data);
+        const slots = new Set<string>();
+        bookingsRes.data?.forEach(b => {
+          if (b.date && b.time) {
+            slots.add(`${b.date}||${b.time}`);
+          }
+        });
+        console.log('Booked slots set:', Array.from(slots));
+        setBookedSlots(slots);
       }
 
-      console.log('Raw DB confirmed bookings (excluding current):', data);
-
-      const slots = new Set<string>();
-      data?.forEach(b => {
-        if (b.date && b.time) {
-          slots.add(`${b.date}||${b.time}`);
-        }
-      });
-
-      console.log('Booked slots set:', Array.from(slots));
-      setBookedSlots(slots);
+      if (blockedRes.data) {
+        setBlockedDates(new Set(blockedRes.data.map((r: any) => r.date)));
+      }
     } finally {
       setLoadingSlots(false);
     }
@@ -841,9 +846,11 @@ Certificate ID: ST-${booking.id}-${Date.now()}
                         ))}
                         {Array.from({ length: getDaysInMonth(displayMonth, displayYear) }).map((_, i) => {
                           const dateStr = `${monthNames[displayMonth]} ${i + 1}, ${displayYear}`;
+                          const isoDate = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
                           const isPassed = isDatePassed(displayMonth, i + 1, displayYear);
                           const isFullyBooked = isDateFullyBooked(displayMonth, i + 1, displayYear);
-                          const isDisabled = isPassed || isFullyBooked;
+                          const isBlocked = blockedDates.has(isoDate);
+                          const isDisabled = isPassed || isFullyBooked || isBlocked;
                           return (
                             <button
                               key={i}
@@ -853,11 +860,13 @@ Certificate ID: ST-${booking.id}-${Date.now()}
                               className={`text-center text-sm py-2 rounded font-bold transition-all ${
                                 tempDate === dateStr
                                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                                  : isBlocked
+                                  ? 'bg-red-100 text-red-400 cursor-not-allowed line-through'
                                   : isDisabled
                                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                                   : 'bg-slate-50 text-slate-900 hover:bg-blue-100'
                               }`}
-                              title={isFullyBooked ? 'All slots on this day are booked' : isPassed ? 'Date has passed' : ''}
+                              title={isBlocked ? 'Unavailable — this date is blocked' : isFullyBooked ? 'All slots on this day are booked' : isPassed ? 'Date has passed' : ''}
                             >
                               {i + 1}
                             </button>

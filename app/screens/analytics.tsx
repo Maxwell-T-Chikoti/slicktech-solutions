@@ -18,7 +18,7 @@ import {
 
 interface AnalyticsScreenProps {
   onBack: () => void;
-  chartType: 'bookings' | 'revenue' | 'busiest-days';
+  chartType: 'bookings' | 'revenue' | 'busiest-days' | 'popular-services';
 }
 
 interface DailyData {
@@ -32,9 +32,16 @@ interface DayOfWeekData {
   bookings: number;
 }
 
+interface ServiceData {
+  service: string;
+  bookings: number;
+  revenue: number;
+}
+
 const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
   const [data, setData] = useState<DailyData[]>([]);
   const [dayOfWeekData, setDayOfWeekData] = useState<DayOfWeekData[]>([]);
+  const [serviceData, setServiceData] = useState<ServiceData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -123,6 +130,24 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
 
           setDayOfWeekData(dayOfWeekChartData);
         }
+
+        // Popular services breakdown
+        if (chartType === 'popular-services') {
+          const serviceMap: { [key: string]: { bookings: number; revenue: number } } = {};
+          for (const booking of bookingsData) {
+            const svc = booking.service || 'Unknown';
+            if (!serviceMap[svc]) serviceMap[svc] = { bookings: 0, revenue: 0 };
+            serviceMap[svc].bookings += 1;
+            if (booking.status === 'Confirmed' || booking.status === 'Complete') {
+              const priceNum = parseFloat(booking.price?.replace(/[^0-9.]/g, '') || '0');
+              serviceMap[svc].revenue += priceNum;
+            }
+          }
+          const svcChartData = Object.entries(serviceMap)
+            .map(([service, vals]) => ({ service, bookings: vals.bookings, revenue: Math.round(vals.revenue * 100) / 100 }))
+            .sort((a, b) => b.bookings - a.bookings);
+          setServiceData(svcChartData);
+        }
       }
 
       setLoading(false);
@@ -131,7 +156,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
     fetchAnalytics();
   }, []);
 
-  const title = chartType === 'bookings' ? 'Booking History' : chartType === 'revenue' ? 'Revenue History' : 'Busiest Days Analysis';
+  const title = chartType === 'bookings' ? 'Booking History' : chartType === 'revenue' ? 'Revenue History' : chartType === 'busiest-days' ? 'Busiest Days Analysis' : 'Popular Services';
   const dataKey = chartType === 'bookings' ? 'bookings' : chartType === 'revenue' ? 'revenue' : 'bookings';
 
   return (
@@ -162,14 +187,33 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
             <div className="flex items-center justify-center h-96">
               <div className="loader ease-linear rounded-full border-8 border-t-8 border-gray-300 h-16 w-16"></div>
             </div>
-          ) : (chartType === 'busiest-days' ? dayOfWeekData.length === 0 : data.length === 0) ? (
+          ) : (chartType === 'busiest-days' ? dayOfWeekData.length === 0 : chartType === 'popular-services' ? serviceData.length === 0 : data.length === 0) ? (
             <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-12 text-center">
               <p className="text-slate-600 text-lg">No data available yet.</p>
             </div>
           ) : (
             <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-8">
               <ResponsiveContainer width="100%" height={400}>
-                {chartType === 'busiest-days' ? (
+                {chartType === 'popular-services' ? (
+                  <BarChart data={serviceData} margin={{ top: 5, right: 30, left: 0, bottom: 60 }} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
+                    <XAxis type="number" stroke="rgba(0,0,0,0.6)" tick={{ fontSize: 12 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="service"
+                      stroke="rgba(0,0,0,0.6)"
+                      tick={{ fontSize: 11 }}
+                      width={130}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '2px solid rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}
+                      formatter={(value: any, name: string) => [name === 'revenue' ? `R${value.toFixed(2)}` : value, name === 'revenue' ? 'Revenue' : 'Bookings']}
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '10px' }} />
+                    <Bar dataKey="bookings" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Bookings" />
+                    <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} name="Revenue (R)" />
+                  </BarChart>
+                ) : chartType === 'busiest-days' ? (
                   <BarChart data={dayOfWeekData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
                     <XAxis 
@@ -255,31 +299,37 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
                   <p className="text-slate-600 text-sm font-semibold">Total Bookings</p>
                   <p className="text-3xl font-bold text-slate-900 mt-2">
-                    {chartType === 'busiest-days'
+                    {chartType === 'popular-services'
+                      ? serviceData.reduce((s, d) => s + d.bookings, 0)
+                      : chartType === 'busiest-days'
                       ? dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0)
                       : chartType === 'bookings'
                       ? data.reduce((sum, d) => sum + (d.bookings || 0), 0)
-                      : `$${data.reduce((sum, d) => sum + (d.revenue || 0), 0).toFixed(2)}`}
+                      : `R${data.reduce((sum, d) => sum + (d.revenue || 0), 0).toFixed(2)}`}
                   </p>
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
                   <p className="text-slate-600 text-sm font-semibold">
-                    {chartType === 'busiest-days' ? 'Average per Weekday' : 'Average per Day'}
+                    {chartType === 'popular-services' ? 'Total Revenue' : chartType === 'busiest-days' ? 'Average per Weekday' : 'Average per Day'}
                   </p>
                   <p className="text-3xl font-bold text-slate-900 mt-2">
-                    {chartType === 'busiest-days'
-                      ? (dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0) / dayOfWeekData.length).toFixed(1)
+                    {chartType === 'popular-services'
+                      ? `R${serviceData.reduce((s, d) => s + d.revenue, 0).toFixed(2)}`
+                      : chartType === 'busiest-days'
+                      ? (dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0) / (dayOfWeekData.length || 1)).toFixed(1)
                       : chartType === 'bookings'
-                      ? (data.reduce((sum, d) => sum + (d.bookings || 0), 0) / data.length).toFixed(1)
-                      : `$${(data.reduce((sum, d) => sum + (d.revenue || 0), 0) / data.length).toFixed(2)}`}
+                      ? (data.reduce((sum, d) => sum + (d.bookings || 0), 0) / (data.length || 1)).toFixed(1)
+                      : `R${(data.reduce((sum, d) => sum + (d.revenue || 0), 0) / (data.length || 1)).toFixed(2)}`}
                   </p>
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
                   <p className="text-slate-600 text-sm font-semibold">
-                    {chartType === 'busiest-days' ? 'Busiest Day' : 'Peak Day'}
+                    {chartType === 'popular-services' ? 'Most Booked Service' : chartType === 'busiest-days' ? 'Busiest Day' : 'Peak Day'}
                   </p>
-                  <p className="text-3xl font-bold text-slate-900 mt-2">
-                    {chartType === 'busiest-days'
+                  <p className="text-xl font-bold text-slate-900 mt-2">
+                    {chartType === 'popular-services'
+                      ? (serviceData[0]?.service ?? 'N/A')
+                      : chartType === 'busiest-days'
                       ? (() => {
                           const maxBookings = Math.max(...dayOfWeekData.map(d => d.bookings));
                           const busiestDay = dayOfWeekData.find(d => d.bookings === maxBookings);
@@ -287,7 +337,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                         })()
                       : chartType === 'bookings'
                       ? Math.max(...data.map(d => d.bookings || 0))
-                      : `$${Math.max(...data.map(d => d.revenue || 0)).toFixed(2)}`}
+                      : `R${Math.max(...data.map(d => d.revenue || 0)).toFixed(2)}`}
                   </p>
                 </div>
               </div>

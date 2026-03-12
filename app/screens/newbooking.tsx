@@ -27,6 +27,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const [services, setServices] = useState<{title: string; price: string}[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
+  const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
   
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -36,13 +37,17 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   // fetch services from database
   React.useEffect(() => {
     const fetch = async () => {
-      const { data, error } = await supabase.from('services').select('title, price').order('id');
-      if (error) {
-        console.error('Error fetching services in newbooking:', error);
-        console.error('Error JSON:', JSON.stringify(error, null, 2));
-        console.error('error details:', error);
-      } else if (data) {
-        setServices(data.map((s: any) => ({ title: s.title, price: s.price || '' })));
+      const [svcRes, bdRes] = await Promise.all([
+        supabase.from('services').select('title, price').order('id'),
+        supabase.from('blocked_dates').select('date'),
+      ]);
+      if (svcRes.data) {
+        setServices(svcRes.data.map((s: any) => ({ title: s.title, price: s.price || '' })));
+      } else if (svcRes.error) {
+        console.error('Error fetching services:', svcRes.error);
+      }
+      if (bdRes.data) {
+        setBlockedDates(new Set(bdRes.data.map((r: any) => r.date)));
       }
       setLoadingServices(false);
       // Show loading animation for at least 1 second
@@ -552,18 +557,25 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                       {Array.from({ length: getDaysInMonth(displayMonth, displayYear) }).map((_, i) => {
                         const dateStr = `${monthNames[displayMonth]} ${i + 1}, ${displayYear}`;
                         const isPassed = isDatePassed(displayMonth, i + 1, displayYear);
+                        // Convert to YYYY-MM-DD for blocked_dates comparison
+                        const isoDate = `${displayYear}-${String(displayMonth + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
+                        const isBlocked = blockedDates.has(isoDate);
+                        const disabled = isPassed || isBlocked;
                         return (
                           <button
                             key={i}
                             type="button"
-                            onClick={() => !isPassed && handleDateChange(dateStr)}
-                            disabled={isPassed}
-                            className={`text-center text-sm py-2 rounded text-gray-900 font-medium ${
+                            onClick={() => !disabled && handleDateChange(dateStr)}
+                            disabled={disabled}
+                            title={isBlocked ? 'Unavailable — this date is blocked' : undefined}
+                            className={`text-center text-sm py-2 rounded font-medium ${
                               bookingData.date === dateStr
                                 ? 'bg-blue-700 text-white font-bold'
-                                : isPassed
+                                : isBlocked
+                                ? 'bg-red-100 text-red-400 cursor-not-allowed line-through'
+                                : disabled
                                 ? 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-50'
-                                : 'hover:bg-gray-100'
+                                : 'text-gray-900 hover:bg-gray-100'
                             }`}
                           >
                             {i + 1}

@@ -30,7 +30,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<BookingWithProfile | null>(null);
-  const [viewAnalytics, setViewAnalytics] = useState<'bookings' | 'revenue' | 'busiest-days' | null>(null);
+  const [viewAnalytics, setViewAnalytics] = useState<'bookings' | 'revenue' | 'busiest-days' | 'popular-services' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showNotifications, setShowNotifications] = useState(false);
@@ -73,6 +73,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newFeatureInput, setNewFeatureInput] = useState<string>('');
   const [newServiceGradient, setNewServiceGradient] = useState<string>('linear-gradient(135deg, #60a5fa, #2563eb)');
   const [editingService, setEditingService] = useState<any | null>(null);
+  // customer messaging
+  const [customMessage, setCustomMessage] = useState<string>('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  // availability / blocked dates
+  const [blockedDates, setBlockedDates] = useState<any[]>([]);
+  const [newBlockedDate, setNewBlockedDate] = useState<string>('');
+  const [newBlockedReason, setNewBlockedReason] = useState<string>('');
 
   // fetch services function
   const fetchServices = async () => {
@@ -88,6 +95,37 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       setServices(data || []);
     } catch (e) {
       console.error('Error fetching services:', e);
+    }
+  };
+
+  const fetchBlockedDates = async () => {
+    const { data } = await supabase
+      .from('blocked_dates')
+      .select('*')
+      .order('date', { ascending: true });
+    if (data) setBlockedDates(data);
+  };
+
+  const addBlockedDate = async () => {
+    if (!newBlockedDate) return;
+    const { error } = await supabase
+      .from('blocked_dates')
+      .insert([{ date: newBlockedDate, reason: newBlockedReason.trim() }]);
+    if (error) {
+      addNotification('Could not block date (already blocked or permission denied)', 'error');
+    } else {
+      addNotification(`${newBlockedDate} blocked successfully`, 'success');
+      setNewBlockedDate('');
+      setNewBlockedReason('');
+      fetchBlockedDates();
+    }
+  };
+
+  const removeBlockedDate = async (id: number) => {
+    const { error } = await supabase.from('blocked_dates').delete().eq('id', id);
+    if (!error) {
+      addNotification('Date unblocked', 'success');
+      fetchBlockedDates();
     }
   };
 
@@ -240,6 +278,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchBookingsWithProfiles();
       fetchCustomers();
       fetchServices();
+      fetchBlockedDates();
       logActivity('Admin logged in');
 
       // Set up real-time subscription for new bookings
@@ -270,10 +309,62 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       console.error('Error updating booking:', error);
       alert('Failed to update booking status');
     } else {
-      // Log activity
       logActivity(`Updated booking #${id} status to ${newStatus}`);
+      // Send email notification to customer
+      const booking = bookings.find((b) => b.id === id) ?? selectedBooking;
+      if (booking?.user_email) {
+        try {
+          await fetch('/api/send-status-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userEmail: booking.user_email,
+              userName: booking.user_name ?? 'Customer',
+              service: booking.service,
+              date: booking.date,
+              time: booking.time,
+              status: newStatus,
+              bookingId: booking.id,
+            }),
+          });
+          addNotification(`Status updated & notification sent to ${booking.user_email}`, 'success');
+        } catch (emailErr) {
+          console.warn('Email notification failed:', emailErr);
+          addNotification(`Status updated (email notification failed)`, 'warning');
+        }
+      } else {
+        addNotification(`Booking #${id} status updated to ${newStatus}`, 'success');
+      }
       setSelectedBooking(null);
       fetchBookingsWithProfiles();
+    }
+  };
+
+  const sendCustomMessage = async () => {
+    if (!selectedBooking || !customMessage.trim()) return;
+    setSendingMessage(true);
+    try {
+      const res = await fetch('/api/send-status-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userEmail: selectedBooking.user_email,
+          userName: selectedBooking.user_name ?? 'Customer',
+          service: selectedBooking.service,
+          date: selectedBooking.date,
+          time: selectedBooking.time,
+          status: selectedBooking.status,
+          bookingId: selectedBooking.id,
+          customMessage: customMessage.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error('API error');
+      addNotification(`Message sent to ${selectedBooking.user_email}`, 'success');
+      setCustomMessage('');
+    } catch (e) {
+      addNotification('Failed to send message', 'error');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -1253,6 +1344,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       <p className="text-2xl font-bold text-slate-900 mt-3 truncate">{metrics.topService}</p>
                       <p className="text-xs text-slate-600 mt-2">Most booked service</p>
                     </div>
+                    <div
+                      onClick={() => setViewAnalytics('popular-services')}
+                      className="backdrop-blur-xl bg-gradient-to-br from-teal-400/20 to-teal-600/20 rounded-2xl p-6 border border-teal-200/40 hover:border-teal-300/60 transition-all hover:shadow-lg cursor-pointer hover:scale-105 transform"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-slate-700 text-sm font-semibold">Popular Services</p>
+                        <FaChartBar className="text-teal-500 text-lg" />
+                      </div>
+                      <p className="text-2xl font-bold text-slate-900 mt-3 truncate">{metrics.topService}</p>
+                      <p className="text-xs text-slate-600 mt-2">Click to view full breakdown</p>
+                    </div>
                   </div>
                 </div>
 
@@ -1676,6 +1778,60 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     </ul>
                   )}
                 </div>
+
+                {/* ─── Availability / Blocked Dates ─── */}
+                <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <h3 className="text-xl font-semibold mb-1 text-black">Availability Management</h3>
+                  <p className="text-sm text-slate-500 mb-5">Block specific dates so customers cannot book on those days.</p>
+
+                  {/* Add date form */}
+                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <input
+                      type="date"
+                      value={newBlockedDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setNewBlockedDate(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Reason (optional, e.g. Public holiday)"
+                      value={newBlockedReason}
+                      onChange={(e) => setNewBlockedReason(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-400"
+                    />
+                    <button
+                      onClick={addBlockedDate}
+                      disabled={!newBlockedDate}
+                      className="px-6 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white rounded-lg font-semibold whitespace-nowrap transition"
+                    >
+                      Block Date
+                    </button>
+                  </div>
+
+                  {/* Blocked dates list */}
+                  {blockedDates.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No dates are currently blocked. All dates are available for booking.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {blockedDates.map((bd) => (
+                        <li key={bd.id} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                          <div>
+                            <span className="font-bold text-red-700">{bd.date}</span>
+                            {bd.reason && <span className="ml-3 text-sm text-slate-500">— {bd.reason}</span>}
+                          </div>
+                          <button
+                            onClick={() => removeBlockedDate(bd.id)}
+                            className="text-red-500 hover:text-red-700 text-sm font-bold"
+                            title="Unblock this date"
+                          >
+                            <FaTrash size={13} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1836,13 +1992,34 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             <FaTimes /> Reject
                           </button>
                           <button
-                            onClick={() => setSelectedBooking(null)}
+                            onClick={() => { setSelectedBooking(null); setCustomMessage(''); }}
                             className="flex-1 bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white py-3 px-4 rounded-xl font-semibold transition-all backdrop-blur-md border border-gray-300 hover:border-gray-400"
                           >
                             Close
                           </button>
                         </div>
                       </div>
+
+                      {/* Customer Messaging */}
+                      <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
+                        <p className="text-sm font-semibold text-slate-900 mb-1">Send Message to Customer</p>
+                        <p className="text-xs text-slate-400 mb-3">An email will be sent directly to {selectedBooking.user_email}.</p>
+                        <textarea
+                          rows={3}
+                          placeholder="Type a custom message, e.g. instructions, rescheduling notes, follow-up…"
+                          value={customMessage}
+                          onChange={(e) => setCustomMessage(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                        />
+                        <button
+                          onClick={sendCustomMessage}
+                          disabled={sendingMessage || !customMessage.trim()}
+                          className="mt-3 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white py-2.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                        >
+                          {sendingMessage ? 'Sending…' : '✉ Send Message'}
+                        </button>
+                      </div>
+
                     </div>
                   </div>
                 </div>

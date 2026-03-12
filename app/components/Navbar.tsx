@@ -44,6 +44,12 @@ const Navbar = ({ currentPage = 'home', onNavigate, onLogout }: NavbarProps) => 
         >
           My Bookings
         </button>
+        <button 
+          onClick={() => onNavigate('myaccount')}
+          className={`hover:text-slate-900 transition-colors ${currentPage === 'myaccount' ? 'text-slate-900' : ''}`}
+        >
+          My Account
+        </button>
       </div>
 
       <div className="flex items-center space-x-4">
