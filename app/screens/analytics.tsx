@@ -229,7 +229,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '2px solid rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}
-                      formatter={(value: any, name: string, item: any) => {
+                      formatter={(value: any, name: string | undefined, item: any) => {
                         if (name === 'revenue') return [`R${value.toFixed(2)}`, 'Revenue'];
                         const ratingInfo = item?.payload?.reviewCount ? ` · ★ ${item.payload.avgRating.toFixed(1)} (${item.payload.reviewCount})` : '';
                         return [`${value}${ratingInfo}`, 'Bookings'];
