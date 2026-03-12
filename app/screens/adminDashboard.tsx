@@ -26,6 +26,22 @@ interface BookingWithProfile {
   user_name?: string;
 }
 
+const AI_DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+type DemandForecastRow = {
+  day: string;
+  bookings: number;
+  probability: number;
+  predictedLoad: 'Low' | 'Moderate' | 'High' | 'Full';
+  suggestedStaff: string;
+};
+
+type DemandModelSummary = {
+  busiestDay: string;
+  lowDemandDay: string;
+  note: string;
+};
+
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [bookings, setBookings] = useState<BookingWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,6 +98,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newBlockedDate, setNewBlockedDate] = useState<string>('');
   const [newBlockedReason, setNewBlockedReason] = useState<string>('');
   const [serviceRatings, setServiceRatings] = useState<Record<string, { avg: number; count: number }>>({});
+  const [aiDemandForecast, setAiDemandForecast] = useState<DemandForecastRow[] | null>(null);
+  const [aiDemandSummary, setAiDemandSummary] = useState<DemandModelSummary | null>(null);
+  const [aiDemandLoading, setAiDemandLoading] = useState(false);
 
   // fetch services function
   const fetchServices = async () => {
@@ -597,9 +616,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   // Customer management
   const fetchCustomers = async () => {
     try {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*');
+      const [{ data: profiles }, { data: servicesData }] = await Promise.all([
+        supabase.from('profiles').select('*'),
+        supabase.from('services').select('title, price'),
+      ]);
 
       if (profiles) {
         const customersWithStats = await Promise.all(
@@ -611,7 +631,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
             const totalSpent = userBookings?.reduce((sum, booking) => {
               if (booking.status === 'Confirmed') {
-                return sum + parseFloat(booking.price?.replace(/[^0-9.]/g, '') || '0');
+                // Use booking.price first; fall back to the service's current price
+                const rawPrice =
+                  booking.price ||
+                  servicesData?.find((s: { title: string; price: string }) => s.title === booking.service)?.price ||
+                  '0';
+                return sum + parseFloat(String(rawPrice).replace(/[^0-9.]/g, '') || '0');
               }
               return sum;
             }, 0) || 0;
@@ -668,6 +693,157 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     return matchesSearch && matchesStatus && matchesService && matchesDateRange;
   });
+
+  const aiDemandInsights = React.useMemo(() => {
+    const dayCounts: Record<string, number> = {
+      Monday: 0,
+      Tuesday: 0,
+      Wednesday: 0,
+      Thursday: 0,
+      Friday: 0,
+      Saturday: 0,
+      Sunday: 0,
+    };
+
+    const eligibleBookings = bookings.filter((booking) => booking.status !== 'Rejected');
+
+    eligibleBookings.forEach((booking) => {
+      const dateObj = new Date(booking.date);
+      if (Number.isNaN(dateObj.getTime())) return;
+
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      if (!dayCounts[dayName]) return;
+
+      dayCounts[dayName] += 1;
+    });
+
+    const maxDayBookings = Math.max(...Object.values(dayCounts), 1);
+
+    const forecastRows: DemandForecastRow[] = AI_DAY_ORDER.map((day) => {
+      const bookingsCount = dayCounts[day];
+      const probability = Math.min(99, Math.round((bookingsCount / maxDayBookings) * 100));
+
+      let predictedLoad: DemandForecastRow['predictedLoad'] = 'Low';
+      if (probability >= 90) predictedLoad = 'Full';
+      else if (probability >= 70) predictedLoad = 'High';
+      else if (probability >= 40) predictedLoad = 'Moderate';
+
+      const suggestedStaff =
+        predictedLoad === 'Full'
+          ? 'Allocate full team + overflow support'
+          : predictedLoad === 'High'
+          ? 'Allocate full core team'
+          : predictedLoad === 'Moderate'
+          ? 'Allocate standard team'
+          : 'Lean team allocation';
+
+      return {
+        day,
+        bookings: bookingsCount,
+        probability,
+        predictedLoad,
+        suggestedStaff,
+      };
+    }).sort((a, b) => b.probability - a.probability);
+
+    return {
+      forecastRows,
+      busiestDay: forecastRows[0]?.day || 'N/A',
+      lowDemandDay: [...forecastRows].reverse()[0]?.day || 'N/A',
+    };
+  }, [bookings]);
+
+  useEffect(() => {
+    const fetchAIDemandForecast = async () => {
+      if (bookings.length === 0) {
+        setAiDemandForecast(null);
+        setAiDemandSummary(null);
+        return;
+      }
+
+      setAiDemandLoading(true);
+      try {
+        const payload = {
+          generatedAt: new Date().toISOString(),
+          weeklyDayCounts: metrics.dayOfWeekCounts,
+          bookings: bookings.slice(-400).map((booking) => ({
+            date: booking.date,
+            time: booking.time,
+            service: booking.service,
+            status: booking.status,
+          })),
+        };
+
+        const response = await fetch('/api/ai-insights', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'demand',
+            payload,
+          }),
+        });
+
+        if (!response.ok) {
+          setAiDemandForecast(null);
+          setAiDemandSummary(null);
+          return;
+        }
+
+        const json = await response.json();
+        const result = json?.result;
+
+        const normalizedForecast = Array.isArray(result?.forecast)
+          ? result.forecast
+              .map((row: any) => ({
+                day: String(row?.day || ''),
+                bookings: 0,
+                probability: Math.max(0, Math.min(100, Number(row?.probability || 0))),
+                predictedLoad:
+                  row?.predictedLoad === 'Full' || row?.predictedLoad === 'High' || row?.predictedLoad === 'Moderate'
+                    ? row.predictedLoad
+                    : 'Low',
+                suggestedStaff: String(row?.suggestedStaff || 'Allocate standard team'),
+              }))
+              .filter((row: DemandForecastRow) => AI_DAY_ORDER.includes(row.day))
+          : [];
+
+        const sortedForecast = normalizedForecast.sort(
+          (a: DemandForecastRow, b: DemandForecastRow) => AI_DAY_ORDER.indexOf(a.day) - AI_DAY_ORDER.indexOf(b.day)
+        );
+
+        const summary = result?.summary
+          ? {
+              busiestDay: String(result.summary.busiestDay || aiDemandInsights.busiestDay),
+              lowDemandDay: String(result.summary.lowDemandDay || aiDemandInsights.lowDemandDay),
+              note: String(result.summary.note || ''),
+            }
+          : null;
+
+        if (sortedForecast.length > 0) {
+          setAiDemandForecast(sortedForecast);
+          setAiDemandSummary(summary);
+        } else {
+          setAiDemandForecast(null);
+          setAiDemandSummary(null);
+        }
+      } catch (error) {
+        console.warn('AI demand forecast unavailable:', error);
+        setAiDemandForecast(null);
+        setAiDemandSummary(null);
+      } finally {
+        setAiDemandLoading(false);
+      }
+    };
+
+    fetchAIDemandForecast();
+  }, [bookings, metrics.dayOfWeekCounts, aiDemandInsights.busiestDay, aiDemandInsights.lowDemandDay]);
+
+  const forecastRowsForDisplay = aiDemandForecast && aiDemandForecast.length > 0
+    ? aiDemandForecast
+    : [];
+  const busiestPrediction = aiDemandSummary?.busiestDay || 'AI unavailable';
+  const lowDemandPrediction = aiDemandSummary?.lowDemandDay || 'AI unavailable';
+  const forecastNote = aiDemandSummary?.note || 'AI demand forecast unavailable. Fallback is disabled for testing.';
 
   // Export bookings to PDF
   const exportToPDF = async () => {
@@ -1416,6 +1592,55 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       <p className="text-xs text-slate-600 mt-2">Click to view full breakdown</p>
                     </div>
                   </div>
+                </div>
+
+                {/* Service Breakdown Section */}
+                <div className="px-6 pb-12">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-8">🧠 AI Demand Prediction</h2>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-6 shadow-lg">
+                      <h3 className="text-lg font-bold text-slate-900 mb-4">Booking Probability Forecast</h3>
+                      {aiDemandLoading && (
+                        <p className="text-xs text-slate-600 mb-3">Refreshing AI forecast...</p>
+                      )}
+                      {!aiDemandLoading && forecastRowsForDisplay.length === 0 && (
+                        <p className="text-xs text-red-600 mb-3">AI forecast unavailable. Fallback is disabled for testing.</p>
+                      )}
+                      <div className="space-y-3">
+                        {forecastRowsForDisplay.slice(0, 7).map((row) => (
+                          <div key={row.day} className="flex items-center justify-between rounded-lg bg-white/70 border border-gray-200 p-3">
+                            <div>
+                              <p className="font-semibold text-slate-900">{row.day}</p>
+                              <p className="text-xs text-slate-600">{row.suggestedStaff}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-slate-900">{row.probability}%</p>
+                              <p className="text-xs text-slate-600">{row.predictedLoad}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-6 shadow-lg">
+                      <h3 className="text-lg font-bold text-slate-900 mb-4">Demand Summary</h3>
+                      <div className="space-y-4">
+                        <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-4">
+                          <p className="text-xs font-semibold text-indigo-700 uppercase">Busiest prediction</p>
+                          <p className="text-xl font-bold text-slate-900 mt-1">{busiestPrediction}</p>
+                        </div>
+                        <div className="rounded-lg bg-green-50 border border-green-200 p-4">
+                          <p className="text-xs font-semibold text-green-700 uppercase">Low demand day</p>
+                          <p className="text-xl font-bold text-slate-900 mt-1">{lowDemandPrediction}</p>
+                        </div>
+                        <p className="text-xs text-slate-600">
+                          {forecastNote}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+
                 </div>
 
                 {/* Service Breakdown Section */}
