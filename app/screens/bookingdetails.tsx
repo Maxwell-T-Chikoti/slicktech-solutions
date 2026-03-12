@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
-import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaChevronLeft, FaChevronRight, FaDownload } from 'react-icons/fa';
+import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaChevronLeft, FaChevronRight, FaDownload, FaStar } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { buildCertificateId, buildVerificationUrl, downloadInvoicePDF, generateQrDataUrl } from '@/app/lib/pdfUtils';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 
 interface BookingDetailsProps {
@@ -26,6 +27,12 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   const [bookedSlots, setBookedSlots] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [existingReview, setExistingReview] = useState<any | null>(null);
+  const [savingReview, setSavingReview] = useState(false);
+  const [serviceAverageRating, setServiceAverageRating] = useState(0);
+  const [bookingQrUrl, setBookingQrUrl] = useState('');
 
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -124,6 +131,100 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
     }
   }, [startReschedule, booking]);
 
+  React.useEffect(() => {
+    const loadReviewData = async () => {
+      if (!booking?.id) return;
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const [reviewRes, serviceReviewsRes] = await Promise.all([
+        user
+          ? supabase
+              .from('reviews')
+              .select('*')
+              .eq('booking_id', booking.id)
+              .eq('user_id', user.id)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null } as any),
+        supabase.from('reviews').select('rating').eq('service', booking.service),
+      ]);
+
+      if (reviewRes?.data) {
+        setExistingReview(reviewRes.data);
+        setReviewRating(reviewRes.data.rating);
+        setReviewComment(reviewRes.data.comment || '');
+      } else {
+        setExistingReview(null);
+        setReviewRating(0);
+        setReviewComment('');
+      }
+
+      if (serviceReviewsRes.data?.length) {
+        const average = serviceReviewsRes.data.reduce((sum: number, review: any) => sum + review.rating, 0) / serviceReviewsRes.data.length;
+        setServiceAverageRating(average);
+      } else {
+        setServiceAverageRating(0);
+      }
+
+      const verificationUrl = buildVerificationUrl({ booking: String(booking.id), type: 'booking' });
+      if (verificationUrl) {
+        setBookingQrUrl(await generateQrDataUrl(verificationUrl));
+      }
+    };
+
+    loadReviewData();
+  }, [booking?.id, booking?.service]);
+
+  const handleSubmitReview = async () => {
+    if (!booking?.id || reviewRating < 1) {
+      alert('Please select a rating before submitting your review.');
+      return;
+    }
+
+    setSavingReview(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        alert('You need to be logged in to submit a review.');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('reviews')
+        .upsert([
+          {
+            booking_id: booking.id,
+            user_id: user.id,
+            service: booking.service,
+            rating: reviewRating,
+            comment: reviewComment.trim(),
+          },
+        ], { onConflict: 'booking_id' })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error saving review:', error);
+        alert('Failed to save review. Please try again.');
+        return;
+      }
+
+      setExistingReview(data);
+      const { data: serviceReviews } = await supabase.from('reviews').select('rating').eq('service', booking.service);
+      if (serviceReviews?.length) {
+        setServiceAverageRating(serviceReviews.reduce((sum: number, review: any) => sum + review.rating, 0) / serviceReviews.length);
+      }
+      alert(existingReview ? 'Review updated successfully.' : 'Thank you for your review!');
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
   const handleDateSelect = (dateStr: string) => {
     setTempDate(dateStr);
     setTempTime(''); // reset time when date changes
@@ -199,6 +300,8 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
   const downloadBookingPDF = async () => {
     const pdf = new jsPDF();
+    const bookingVerifyUrl = buildVerificationUrl({ booking: String(booking.id), type: 'booking' });
+    const bookingQrDataUrl = bookingVerifyUrl ? await generateQrDataUrl(bookingVerifyUrl) : '';
     
     // Create a temporary div for PDF content
     const pdfContent = document.createElement('div');
@@ -273,6 +376,15 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
           </div>
         </div>
       </div>
+
+      <div style="background: #eff6ff; padding: 20px; border-radius: 12px; border: 1px solid #bfdbfe; margin-bottom: 30px; display: flex; align-items: center; justify-content: space-between; gap: 20px;">
+        <div>
+          <h3 style="color: #1d4ed8; font-size: 16px; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px;">Booking verification</h3>
+          <p style="color: #334155; font-size: 13px; margin: 0; line-height: 1.6;">Scan the QR code to verify this booking online.</p>
+          <p style="color: #64748b; font-size: 12px; margin: 10px 0 0 0;">Reference: BOOK-${booking.id}</p>
+        </div>
+        ${bookingQrDataUrl ? `<img src="${bookingQrDataUrl}" alt="Booking QR" style="width: 110px; height: 110px; border-radius: 10px; background: white; padding: 8px;" />` : ''}
+      </div>
       
       <div style="text-align: center; border-top: 2px solid #e2e8f0; padding-top: 30px; margin-top: 40px;">
         <p style="color: #64748b; font-size: 12px; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Thank you for choosing SlickTech</p>
@@ -307,6 +419,9 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
   const downloadCompletionCertificate = async () => {
     const pdf = new jsPDF('landscape');
+    const certificateId = buildCertificateId(booking.id);
+    const verificationUrl = buildVerificationUrl({ cert: certificateId, type: 'certificate' });
+    const certificateQrDataUrl = verificationUrl ? await generateQrDataUrl(verificationUrl) : '';
 
     const certificateContent = document.createElement('div');
     certificateContent.style.width = '297mm';
@@ -466,8 +581,13 @@ bottom:20px;
 font-size:14px;
 color:#777;
 ">
-Certificate ID: ST-${booking.id}-${Date.now()}
+Certificate ID: ${certificateId}
 </p>
+
+${certificateQrDataUrl ? `<div style="position:absolute;top:24px;left:24px;background:white;padding:10px;border-radius:16px;z-index:3;box-shadow:0 8px 24px rgba(0,0,0,0.1);">
+<img src="${certificateQrDataUrl}" style="width:120px;height:120px;display:block" />
+<p style="margin:8px 0 0;font-size:12px;color:#444;text-align:center;">Verify online</p>
+</div>` : ''}
 
 </div>
 `;
@@ -779,15 +899,26 @@ Certificate ID: ST-${booking.id}-${Date.now()}
               <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Reschedules Used</p>
               <p className="text-lg font-bold text-slate-900">{booking.reschedules || 0}/1</p>
             </div>
+            <div>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Service Rating</p>
+              <p className="text-lg font-bold text-slate-900">{serviceAverageRating ? `${serviceAverageRating.toFixed(1)} ★` : 'Not rated yet'}</p>
+            </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={downloadBookingPDF}
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-xl transition-all shadow-lg shadow-emerald-200 flex items-center justify-center gap-2"
             >
               <FaDownload className="text-lg" />
               Download PDF
+            </button>
+            <button
+              onClick={() => downloadInvoicePDF(booking)}
+              className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-black py-1.5 px-3 rounded-xl transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2"
+            >
+              <FaDownload className="text-lg" />
+              Invoice
             </button>
             {booking.status === 'Complete' && (
               <button
@@ -814,6 +945,70 @@ Certificate ID: ST-${booking.id}-${Date.now()}
               Cancel
             </button>
           </div>
+
+          {bookingQrUrl && (
+            <div className="mt-8 rounded-[2rem] border border-blue-200 bg-blue-50 p-6 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div>
+                <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-2">QR Booking Confirmation</p>
+                <h3 className="text-xl font-black text-slate-900">Booking reference BOOK-{booking.id}</h3>
+                <p className="text-sm text-slate-600 mt-2">Scan this code to open the public verification page for this booking.</p>
+                {(booking.status === 'Confirmed' || booking.status === 'Complete') && (
+                  <p className="text-sm text-slate-600 mt-2">Certificate ID: <span className="font-bold text-slate-900">{buildCertificateId(booking.id)}</span></p>
+                )}
+              </div>
+              <img src={bookingQrUrl} alt="Booking verification QR" className="w-32 h-32 rounded-2xl border border-blue-200 bg-white p-2" />
+            </div>
+          )}
+
+          {booking.status === 'Complete' && (
+            <div className="mt-8 rounded-[2rem] border border-slate-200 bg-slate-50 p-6">
+              <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+                <div>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Reviews & Ratings</p>
+                  <h3 className="text-xl font-black text-slate-900">Rate your completed service</h3>
+                </div>
+                {existingReview && (
+                  <span className="text-xs font-black px-3 py-2 rounded-full bg-emerald-100 text-emerald-700 uppercase tracking-widest">
+                    Review submitted
+                  </span>
+                )}
+              </div>
+
+              <div className="flex gap-2 mb-4">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setReviewRating(star)}
+                    className={`text-2xl transition-transform ${star <= reviewRating ? 'text-yellow-500 scale-105' : 'text-slate-300 hover:text-yellow-400'}`}
+                    title={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                  >
+                    <FaStar />
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                rows={4}
+                placeholder="Tell us about your experience with SlickTech..."
+                className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+
+              <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                <p className="text-sm text-slate-500">Your review helps improve service quality and updates admin analytics.</p>
+                <button
+                  type="button"
+                  onClick={handleSubmitReview}
+                  disabled={savingReview || reviewRating < 1}
+                  className="rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 px-5 py-3 text-white font-black transition-all"
+                >
+                  {savingReview ? 'Saving review…' : existingReview ? 'Update Review' : 'Submit Review'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {rescheduling && (
             <div className="mt-8 pt-8 border-t border-slate-200">

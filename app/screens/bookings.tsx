@@ -228,7 +228,12 @@ const BookingsScreen = ({ bookings, setBookings, onNavigate, onLogout, isLoading
                         </button>
                         <button 
                           onClick={() => onNavigate('bookingdetails', { booking, reschedule: true })}
-                          className="w-full md:w-32 bg-gray-300 hover:bg-gray-400 text-gray-800 text-sm font-bold py-2 px-4 rounded transition-colors"
+                          disabled={booking.reschedules >= 1}
+                          className={`w-full md:w-32 text-sm font-bold py-2 px-4 rounded transition-colors ${
+                            booking.reschedules >= 1
+                              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                              : 'bg-slate-700 hover:bg-slate-800 text-white'
+                          }`}
                         >
                           Reschedule
                         </button>

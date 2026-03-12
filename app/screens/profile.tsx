@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
-import { FaFacebook, FaTwitter, FaInstagram, FaLinkedin, FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaLock } from 'react-icons/fa';
+import { FaFacebook, FaTwitter, FaInstagram, FaLinkedin, FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaLock, FaMoon, FaSun } from 'react-icons/fa';
+import { useTheme } from '@/app/components/ThemeProvider';
 import supabase from '@/app/lib/supabaseClient';
 
 interface ProfileScreenProps {
@@ -13,6 +14,7 @@ interface ProfileScreenProps {
 const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { theme, toggleTheme } = useTheme();
   const [profileData, setProfileData] = useState<any>({
     firstName: "",
     lastName: "",
@@ -229,6 +231,21 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Account Settings</h1>
           <p className="text-gray-600 mb-8">Manage your personal information and account preferences</p>
+
+          <div className="bg-white rounded-lg shadow-md p-6 mb-8 border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Appearance</h2>
+              <p className="text-sm text-gray-600 mt-1">Switch between light and dark mode. Your preference is saved on this device.</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded transition-colors"
+            >
+              {theme === 'light' ? <FaMoon /> : <FaSun />}
+              {theme === 'light' ? 'Enable Dark Mode' : 'Enable Light Mode'}
+            </button>
+          </div>
 
           {/* Profile Card */}
           <div className="bg-white rounded-lg shadow-md p-8 mb-8">

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
 import supabase from '@/app/lib/supabaseClient';
+import { downloadInvoicePDF } from '@/app/lib/pdfUtils';
 import {
   FaCalendarAlt, FaClock, FaCheckCircle, FaTimesCircle, FaHourglassHalf,
   FaDownload, FaArrowRight, FaUser, FaDollarSign, FaFileAlt, FaChevronDown,
@@ -203,12 +204,20 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                               <span className="flex items-center gap-1"><FaClock size={11} />{next.time}</span>
                             </div>
                           </div>
-                          <button
-                            onClick={() => onNavigate('bookingdetails', next)}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition"
-                          >
-                            Details <FaArrowRight />
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => downloadInvoicePDF({ ...next, user_name: `${user?.first_name ?? ''} ${user?.surname ?? ''}`.trim(), user_email: user?.email })}
+                              className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold text-slate-700 hover:bg-white transition"
+                            >
+                              <FaDownload /> Invoice
+                            </button>
+                            <button
+                              onClick={() => onNavigate('bookingdetails', next)}
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition"
+                            >
+                              Details <FaArrowRight />
+                            </button>
+                          </div>
                         </div>
                       );
                     })()}
@@ -278,6 +287,12 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                         >
                           View Details
                         </button>
+                        <button
+                          onClick={() => downloadInvoicePDF({ ...b, user_name: `${user?.first_name ?? ''} ${user?.surname ?? ''}`.trim(), user_email: user?.email })}
+                          className="w-full sm:w-auto px-5 py-2 bg-slate-900 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition-all"
+                        >
+                          Invoice
+                        </button>
                       </div>
                     ))
                 )}
@@ -341,6 +356,12 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                           <div className="flex items-center gap-3">
                             <span className={`hidden sm:inline text-[10px] font-black px-2 py-1 rounded-lg uppercase ${cfg.color}`}>{cfg.label}</span>
                             <button
+                              onClick={() => downloadInvoicePDF({ ...b, user_name: `${user?.first_name ?? ''} ${user?.surname ?? ''}`.trim(), user_email: user?.email })}
+                              className="text-slate-700 hover:text-blue-700 font-black text-xs hover:underline"
+                            >
+                              Invoice
+                            </button>
+                            <button
                               onClick={() => onNavigate('bookingdetails', b)}
                               className="text-blue-600 hover:text-blue-800 font-black text-xs hover:underline"
                             >
@@ -383,12 +404,20 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                         </div>
                         <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                           {b.price && <p className="font-black text-blue-600">{b.price}</p>}
-                          <button
-                            onClick={() => onNavigate('bookingdetails', b)}
-                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition"
-                          >
-                            <FaDownload size={12} /> Download Certificate
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => downloadInvoicePDF({ ...b, user_name: `${user?.first_name ?? ''} ${user?.surname ?? ''}`.trim(), user_email: user?.email })}
+                              className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-100 transition"
+                            >
+                              <FaDownload size={12} /> Invoice
+                            </button>
+                            <button
+                              onClick={() => onNavigate('bookingdetails', b)}
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition"
+                            >
+                              <FaDownload size={12} /> Download Certificate
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}

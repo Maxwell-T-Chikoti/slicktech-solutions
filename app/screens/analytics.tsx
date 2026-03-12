@@ -36,12 +36,15 @@ interface ServiceData {
   service: string;
   bookings: number;
   revenue: number;
+  avgRating: number;
+  reviewCount: number;
 }
 
 const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
   const [data, setData] = useState<DailyData[]>([]);
   const [dayOfWeekData, setDayOfWeekData] = useState<DayOfWeekData[]>([]);
   const [serviceData, setServiceData] = useState<ServiceData[]>([]);
+  const [overallRating, setOverallRating] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,6 +56,9 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
         .from('bookings')
         .select('*')
         .order('date', { ascending: true });
+      const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select('service, rating');
 
       if (error) {
         console.error('Error fetching analytics:', error);
@@ -61,6 +67,16 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
       }
 
       if (bookingsData) {
+        const reviewMap: Record<string, { total: number; count: number }> = {};
+        reviewsData?.forEach((review: any) => {
+          if (!reviewMap[review.service]) reviewMap[review.service] = { total: 0, count: 0 };
+          reviewMap[review.service].total += review.rating;
+          reviewMap[review.service].count += 1;
+        });
+        const reviewCount = reviewsData?.length || 0;
+        const totalRating = reviewsData?.reduce((sum: number, review: any) => sum + review.rating, 0) || 0;
+        setOverallRating(reviewCount ? totalRating / reviewCount : 0);
+
         // Group by date and calculate metrics
         const dailyMap: { [key: string]: { bookings: number; revenue: number } } = {};
 
@@ -144,7 +160,13 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
             }
           }
           const svcChartData = Object.entries(serviceMap)
-            .map(([service, vals]) => ({ service, bookings: vals.bookings, revenue: Math.round(vals.revenue * 100) / 100 }))
+            .map(([service, vals]) => ({
+              service,
+              bookings: vals.bookings,
+              revenue: Math.round(vals.revenue * 100) / 100,
+              avgRating: reviewMap[service]?.count ? reviewMap[service].total / reviewMap[service].count : 0,
+              reviewCount: reviewMap[service]?.count || 0,
+            }))
             .sort((a, b) => b.bookings - a.bookings);
           setServiceData(svcChartData);
         }
@@ -207,7 +229,11 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '2px solid rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}
-                      formatter={(value: any, name: string) => [name === 'revenue' ? `R${value.toFixed(2)}` : value, name === 'revenue' ? 'Revenue' : 'Bookings']}
+                      formatter={(value: any, name: string, item: any) => {
+                        if (name === 'revenue') return [`R${value.toFixed(2)}`, 'Revenue'];
+                        const ratingInfo = item?.payload?.reviewCount ? ` · ★ ${item.payload.avgRating.toFixed(1)} (${item.payload.reviewCount})` : '';
+                        return [`${value}${ratingInfo}`, 'Bookings'];
+                      }}
                     />
                     <Legend wrapperStyle={{ paddingTop: '10px' }} />
                     <Bar dataKey="bookings" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Bookings" />
@@ -310,11 +336,11 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
                   <p className="text-slate-600 text-sm font-semibold">
-                    {chartType === 'popular-services' ? 'Total Revenue' : chartType === 'busiest-days' ? 'Average per Weekday' : 'Average per Day'}
+                    {chartType === 'popular-services' ? 'Average Rating' : chartType === 'busiest-days' ? 'Average per Weekday' : 'Average per Day'}
                   </p>
                   <p className="text-3xl font-bold text-slate-900 mt-2">
                     {chartType === 'popular-services'
-                      ? `R${serviceData.reduce((s, d) => s + d.revenue, 0).toFixed(2)}`
+                      ? (overallRating ? `${overallRating.toFixed(1)} ★` : 'No reviews')
                       : chartType === 'busiest-days'
                       ? (dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0) / (dayOfWeekData.length || 1)).toFixed(1)
                       : chartType === 'bookings'
@@ -324,11 +350,11 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
                   <p className="text-slate-600 text-sm font-semibold">
-                    {chartType === 'popular-services' ? 'Most Booked Service' : chartType === 'busiest-days' ? 'Busiest Day' : 'Peak Day'}
+                    {chartType === 'popular-services' ? 'Top Rated Service' : chartType === 'busiest-days' ? 'Busiest Day' : 'Peak Day'}
                   </p>
                   <p className="text-xl font-bold text-slate-900 mt-2">
                     {chartType === 'popular-services'
-                      ? (serviceData[0]?.service ?? 'N/A')
+                      ? ([...serviceData].sort((a, b) => b.avgRating - a.avgRating)[0]?.service ?? 'N/A')
                       : chartType === 'busiest-days'
                       ? (() => {
                           const maxBookings = Math.max(...dayOfWeekData.map(d => d.bookings));

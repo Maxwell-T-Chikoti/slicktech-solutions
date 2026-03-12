@@ -157,6 +157,19 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         alert('There was an error saving your booking. Please try again.');
       } else {
         console.log('Booking inserted:', data);
+        const insertedBookingId = (data as any)?.[0]?.id || null;
+
+        if (user && insertedBookingId) {
+          await supabase.from('notifications').insert([
+            {
+              user_id: user.id,
+              title: 'Booking received',
+              message: `Your ${bookingData.service} booking for ${bookingData.date} at ${bookingData.time} has been created successfully.`,
+              type: 'success',
+              booking_id: insertedBookingId,
+            },
+          ]);
+        }
         
         // Send confirmation email
         if (user) {
@@ -175,7 +188,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                 description: bookingData.description,
                 extraServices: bookingData.extraServices,
                 // Supabase insert returns an array of rows; cast to any to satisfy TypeScript
-                bookingId: (data as any)?.[0]?.id || 'Pending',
+                bookingId: insertedBookingId || 'Pending',
               }),
             });
           } catch (emailError) {

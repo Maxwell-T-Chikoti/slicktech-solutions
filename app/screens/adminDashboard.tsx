@@ -6,6 +6,7 @@ import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaCl
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { downloadInvoicePDF } from '@/app/lib/pdfUtils';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 
 interface AdminDashboardProps {
@@ -80,22 +81,63 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [blockedDates, setBlockedDates] = useState<any[]>([]);
   const [newBlockedDate, setNewBlockedDate] = useState<string>('');
   const [newBlockedReason, setNewBlockedReason] = useState<string>('');
+  const [serviceRatings, setServiceRatings] = useState<Record<string, { avg: number; count: number }>>({});
 
   // fetch services function
   const fetchServices = async () => {
     try {
-      const { data, error } = await supabase
-        .from('services')
-        .select('*')
-        .order('title', { ascending: true });
-      if (error) {
-        console.error('Error fetching services:', error);
+      const [servicesRes, reviewsRes] = await Promise.all([
+        supabase
+          .from('services')
+          .select('*')
+          .order('title', { ascending: true }),
+        supabase.from('reviews').select('service, rating'),
+      ]);
+      if (servicesRes.error) {
+        console.error('Error fetching services:', servicesRes.error);
         return;
       }
-      setServices(data || []);
+      const ratingsMap: Record<string, { avg: number; count: number }> = {};
+      const grouped: Record<string, { total: number; count: number }> = {};
+      reviewsRes.data?.forEach((review: any) => {
+        if (!grouped[review.service]) grouped[review.service] = { total: 0, count: 0 };
+        grouped[review.service].total += review.rating;
+        grouped[review.service].count += 1;
+      });
+      Object.entries(grouped).forEach(([service, data]) => {
+        ratingsMap[service] = { avg: data.total / data.count, count: data.count };
+      });
+      setServiceRatings(ratingsMap);
+      const overallReviews = reviewsRes.data || [];
+      setMetrics((prev) => ({
+        ...prev,
+        averageRating: overallReviews.length
+          ? overallReviews.reduce((sum: number, review: any) => sum + review.rating, 0) / overallReviews.length
+          : 0,
+      }));
+      setServices(servicesRes.data || []);
     } catch (e) {
       console.error('Error fetching services:', e);
     }
+  };
+
+  const createUserNotification = async (
+    userId: string | undefined,
+    title: string,
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'error' = 'info',
+    bookingId?: number
+  ) => {
+    if (!userId) return;
+    await supabase.from('notifications').insert([
+      {
+        user_id: userId,
+        title,
+        message,
+        type,
+        booking_id: bookingId,
+      },
+    ]);
   };
 
   const fetchBlockedDates = async () => {
@@ -312,6 +354,17 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       logActivity(`Updated booking #${id} status to ${newStatus}`);
       // Send email notification to customer
       const booking = bookings.find((b) => b.id === id) ?? selectedBooking;
+      if (booking?.user_id) {
+        await createUserNotification(
+          booking.user_id,
+          newStatus === 'Complete' ? 'Certificate ready' : `Booking ${newStatus}`,
+          newStatus === 'Complete'
+            ? `Your ${booking.service} service is complete. Your certificate and invoice are now available.`
+            : `Your ${booking.service} booking is now marked as ${newStatus}.`,
+          newStatus === 'Rejected' ? 'warning' : 'success',
+          booking.id
+        );
+      }
       if (booking?.user_email) {
         try {
           await fetch('/api/send-status-notification', {
@@ -359,6 +412,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         }),
       });
       if (!res.ok) throw new Error('API error');
+      await createUserNotification(
+        selectedBooking.user_id,
+        'Message from SlickTech',
+        customMessage.trim(),
+        'info',
+        selectedBooking.id
+      );
       addNotification(`Message sent to ${selectedBooking.user_email}`, 'success');
       setCustomMessage('');
     } catch (e) {
@@ -1747,7 +1807,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         <li key={svc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
                           <div className="flex items-center gap-3">
                             <div style={{ background: svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)' }} className="w-8 h-8 rounded-full flex-shrink-0" />
-                            <span className="font-medium text-black">{svc.title} - {svc.price}</span>
+                            <div>
+                              <span className="font-medium text-black">{svc.title} - {svc.price}</span>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {serviceRatings[svc.title]
+                                  ? `★ ${serviceRatings[svc.title].avg.toFixed(1)} from ${serviceRatings[svc.title].count} review${serviceRatings[svc.title].count !== 1 ? 's' : ''}`
+                                  : 'No reviews yet'}
+                              </p>
+                            </div>
                           </div>
                           <div className="flex gap-3">
                             <button
@@ -1935,6 +2002,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <p className="text-sm">
                             <span className="font-semibold text-slate-900">Price:</span> <span className="text-slate-700">{selectedBooking.price}</span>
                           </p>
+                          <button
+                            onClick={() => downloadInvoicePDF(selectedBooking)}
+                            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-all"
+                          >
+                            <FaDownload /> Download Invoice
+                          </button>
                         </div>
                       </div>
 
