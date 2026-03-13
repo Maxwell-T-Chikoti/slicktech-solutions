@@ -459,3 +459,99 @@ html {
 button, a {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* =====================================================
+   AUTH SCREENS — Always rendered in light mode.
+   Dark mode overrides are intentionally blocked here.
+   ===================================================== */
+html[data-theme="dark"] .auth-screen {
+  color: #0f172a;
+}
+
+html[data-theme="dark"] .auth-screen .bg-white,
+html[data-theme="dark"] .auth-screen .bg-white\/80,
+html[data-theme="dark"] .auth-screen .bg-white\/90,
+html[data-theme="dark"] .auth-screen .bg-white\/60,
+html[data-theme="dark"] .auth-screen .bg-white\/50 {
+  background-color: white !important;
+}
+
+html[data-theme="dark"] .auth-screen .bg-slate-50,
+html[data-theme="dark"] .auth-screen .bg-gray-50 {
+  background-color: #f8fafc !important;
+}
+
+html[data-theme="dark"] .auth-screen .bg-slate-100,
+html[data-theme="dark"] .auth-screen .bg-gray-100,
+html[data-theme="dark"] .auth-screen .bg-gray-200,
+html[data-theme="dark"] .auth-screen .bg-slate-200,
+html[data-theme="dark"] .auth-screen .bg-blue-50,
+html[data-theme="dark"] .auth-screen .bg-emerald-50,
+html[data-theme="dark"] .auth-screen .bg-orange-50,
+html[data-theme="dark"] .auth-screen .bg-indigo-50,
+html[data-theme="dark"] .auth-screen .bg-red-50,
+html[data-theme="dark"] .auth-screen .bg-yellow-50 {
+  background-color: initial !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-900,
+html[data-theme="dark"] .auth-screen .text-gray-900,
+html[data-theme="dark"] .auth-screen .text-black {
+  color: #0f172a !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-800,
+html[data-theme="dark"] .auth-screen .text-gray-800 {
+  color: #1e293b !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-700,
+html[data-theme="dark"] .auth-screen .text-gray-700 {
+  color: #334155 !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-600,
+html[data-theme="dark"] .auth-screen .text-gray-600 {
+  color: #475569 !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-500,
+html[data-theme="dark"] .auth-screen .text-gray-500 {
+  color: #64748b !important;
+}
+
+html[data-theme="dark"] .auth-screen .text-slate-400,
+html[data-theme="dark"] .auth-screen .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] .auth-screen .border-gray-200,
+html[data-theme="dark"] .auth-screen .border-gray-300,
+html[data-theme="dark"] .auth-screen .border-slate-200,
+html[data-theme="dark"] .auth-screen .border-slate-100,
+html[data-theme="dark"] .auth-screen .border-blue-100,
+html[data-theme="dark"] .auth-screen .border-red-200,
+html[data-theme="dark"] .auth-screen .border-blue-200 {
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] .auth-screen input,
+html[data-theme="dark"] .auth-screen textarea,
+html[data-theme="dark"] .auth-screen select {
+  background-color: white !important;
+  color: #1e293b !important;
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] .auth-screen input::placeholder,
+html[data-theme="dark"] .auth-screen textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] .auth-screen .shadow-sm,
+html[data-theme="dark"] .auth-screen .shadow-md,
+html[data-theme="dark"] .auth-screen .shadow-lg,
+html[data-theme="dark"] .auth-screen .shadow-xl,
+html[data-theme="dark"] .auth-screen .shadow-2xl {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+}

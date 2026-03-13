@@ -147,7 +147,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="auth-screen flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-12 overflow-y-auto">
         <div className="w-full max-w-md py-10 animate-fade-in">
           <div className="flex justify-center mb-10">

@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
+import Link from 'next/link';
 import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
 
-import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye } from 'react-icons/fa';
+import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye, FaHome } from 'react-icons/fa';
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
 import AdminLoginScreen from './adminLogin';
@@ -128,7 +129,17 @@ const LoginScreen = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="auth-screen flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 relative">
+
+      {/* Home icon button */}
+      <Link
+        href="/"
+        className="absolute top-6 left-6 z-20 group flex items-center gap-2 bg-white/80 backdrop-blur-sm border border-slate-200 hover:border-blue-400 px-4 py-2.5 rounded-full shadow-md hover:shadow-lg hover:shadow-blue-100 transition-all duration-300 hover:scale-105"
+      >
+        <FaHome className="text-slate-500 group-hover:text-blue-600 text-sm transition-colors duration-300" />
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-600 group-hover:text-blue-600 transition-colors duration-300">Home</span>
+      </Link>
+
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-20">
         <div className="w-full max-w-md animate-fade-in">
           

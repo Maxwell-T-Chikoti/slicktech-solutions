@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
-import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -53,6 +53,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showMobileActions, setShowMobileActions] = useState(false);
+  const [showMobileTabs, setShowMobileTabs] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [newBookingAlert, setNewBookingAlert] = useState<BookingWithProfile | null>(null);
   const [selectedBookings, setSelectedBookings] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
@@ -1328,10 +1331,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             <div className="backdrop-blur-xl bg-gradient-to-r from-white/40 to-white/20 border-b border-gray-200 px-6 py-8 sticky top-0 z-20">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h1 className="text-4xl font-bold text-slate-900">Admin Dashboard</h1>
+                  <h1 className="text-2xl md:text-4xl font-bold text-slate-900">Admin Dashboard</h1>
                   <p className="text-slate-600 text-sm mt-2">Manage bookings, track revenue, and analyze performance</p>
                 </div>
-                <div className="flex items-center space-x-4">
+                <div className="hidden md:flex items-center space-x-4">
                   {/* Notifications */}
                   <div className="relative">
                     <button
@@ -1347,7 +1350,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       )}
                     </button>
                     {showNotifications && (
-                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                      <div className="absolute right-0 mt-2 w-[90vw] max-w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
                         <div className="p-4 border-b border-gray-200">
                           <h3 className="font-semibold text-slate-900">Notifications</h3>
                         </div>
@@ -1419,10 +1422,97 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     Logout
                   </button>
                 </div>
+
+                <div className="md:hidden flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setShowNotifications(!showNotifications);
+                      setShowMobileActions(false);
+                    }}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold p-2 rounded-full transition-all relative"
+                    title="Notifications"
+                  >
+                    <FaBell />
+                    {notifications.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-5 w-5 flex items-center justify-center">
+                        {notifications.length}
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowMobileActions(!showMobileActions);
+                      setShowNotifications(false);
+                    }}
+                    className="bg-slate-700 hover:bg-slate-800 text-white font-semibold p-2 rounded-full transition-all"
+                    title="Admin actions"
+                  >
+                    <FaBars />
+                  </button>
+                </div>
               </div>
 
+              {showMobileActions && (
+                <div className="md:hidden mb-4 rounded-xl bg-white/90 border border-slate-200 p-3 shadow-sm">
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      onClick={() => {
+                        fetchBookingsWithProfiles();
+                        setShowMobileActions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-blue-50 text-blue-700 font-semibold"
+                    >
+                      Refresh Data
+                    </button>
+                    <button
+                      onClick={() => {
+                        exportToPDF();
+                        setShowMobileActions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-green-50 text-green-700 font-semibold"
+                    >
+                      Export Bookings PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        exportKPIsToPDF();
+                        setShowMobileActions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-purple-50 text-purple-700 font-semibold"
+                    >
+                      Export KPI Report
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSettings(!showSettings);
+                        setShowMobileActions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold"
+                    >
+                      Settings
+                    </button>
+                    <button
+                      onClick={() => {
+                        toggleTheme();
+                        setShowMobileActions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold"
+                    >
+                      {theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+                    </button>
+                    <button
+                      onClick={onLogout}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-red-50 text-red-700 font-semibold"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Navigation Tabs */}
-              <div className="flex space-x-1 mb-6">
+              <div className="hidden md:flex space-x-1 mb-6">
                 {[
                   { id: 'dashboard', label: 'Dashboard', icon: FaChartBar },
                   { id: 'customers', label: 'Customers', icon: FaUser },
@@ -1444,57 +1534,159 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 ))}
               </div>
 
+              <div className="md:hidden mb-4">
+                <button
+                  onClick={() => setShowMobileTabs(!showMobileTabs)}
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-white/80 border border-slate-200 text-slate-800 font-semibold"
+                >
+                  <span>
+                    {activeTab === 'dashboard' && 'Dashboard'}
+                    {activeTab === 'customers' && 'Customers'}
+                    {activeTab === 'activity' && 'Activity Log'}
+                    {activeTab === 'services' && 'Services'}
+                  </span>
+                  <FaBars />
+                </button>
+                {showMobileTabs && (
+                  <div className="mt-2 rounded-lg bg-white border border-slate-200 p-2 space-y-1">
+                    {[
+                      { id: 'dashboard', label: 'Dashboard' },
+                      { id: 'customers', label: 'Customers' },
+                      { id: 'activity', label: 'Activity Log' },
+                      { id: 'services', label: 'Services' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => {
+                          setActiveTab(tab.id as any);
+                          setShowMobileTabs(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-md font-medium ${
+                          activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Search and Filter Bar */}
               {activeTab === 'dashboard' && (
-                <div className="flex gap-4 items-center flex-wrap">
-                  <div className="flex-1 relative min-w-64">
-                    <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600" />
-                    <input
-                      type="text"
-                      placeholder="Search by client name, email, or service..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white placeholder-gray-700 text-gray-900 font-medium"
-                    />
+                <>
+                  <div className="hidden md:flex gap-4 items-center flex-wrap">
+                    <div className="flex-1 relative min-w-64">
+                      <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600" />
+                      <input
+                        type="text"
+                        placeholder="Search by client name, email, or service..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white placeholder-gray-700 text-gray-900 font-medium"
+                      />
+                    </div>
+                    <select
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Confirmed">Confirmed</option>
+                      <option value="Complete">Complete</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                    <select
+                      value={serviceFilter}
+                      onChange={(e) => setServiceFilter(e.target.value)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                    >
+                      <option value="all">All Services</option>
+                      {getAvailableServices().map(service => (
+                        <option key={service} value={service}>{service}</option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={dateRange.start}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        placeholder="Start date"
+                      />
+                      <input
+                        type="date"
+                        value={dateRange.end}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        placeholder="End date"
+                      />
+                    </div>
                   </div>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="Complete">Complete</option>
-                    <option value="Rejected">Rejected</option>
-                  </select>
-                  <select
-                    value={serviceFilter}
-                    onChange={(e) => setServiceFilter(e.target.value)}
-                    className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
-                  >
-                    <option value="all">All Services</option>
-                    {getAvailableServices().map(service => (
-                      <option key={service} value={service}>{service}</option>
-                    ))}
-                  </select>
-                  <div className="flex gap-2">
-                    <input
-                      type="date"
-                      value={dateRange.start}
-                      onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                      className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
-                      placeholder="Start date"
-                    />
-                    <input
-                      type="date"
-                      value={dateRange.end}
-                      onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                      className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
-                      placeholder="End date"
-                    />
+
+                  <div className="md:hidden">
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600" />
+                        <input
+                          type="text"
+                          placeholder="Search bookings..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white placeholder-gray-700 text-gray-900 font-medium"
+                        />
+                      </div>
+                      <button
+                        onClick={() => setShowMobileFilters(!showMobileFilters)}
+                        className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-slate-700"
+                        title="Toggle filters"
+                      >
+                        <FaBars />
+                      </button>
+                    </div>
+
+                    {showMobileFilters && (
+                      <div className="mt-2 space-y-2 rounded-lg bg-white border border-slate-200 p-3">
+                        <select
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        >
+                          <option value="all">All Status</option>
+                          <option value="Pending">Pending</option>
+                          <option value="Confirmed">Confirmed</option>
+                          <option value="Complete">Complete</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                        <select
+                          value={serviceFilter}
+                          onChange={(e) => setServiceFilter(e.target.value)}
+                          className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        >
+                          <option value="all">All Services</option>
+                          {getAvailableServices().map(service => (
+                            <option key={service} value={service}>{service}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="date"
+                          value={dateRange.start}
+                          onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          placeholder="Start date"
+                        />
+                        <input
+                          type="date"
+                          value={dateRange.end}
+                          onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          placeholder="End date"
+                        />
+                      </div>
+                    )}
                   </div>
-                </div>
+                </>
               )}
             </div>
 

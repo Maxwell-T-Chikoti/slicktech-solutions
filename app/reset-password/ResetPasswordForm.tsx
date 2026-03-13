@@ -110,7 +110,7 @@ const ResetPasswordForm = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="auth-screen flex min-h-screen bg-white">
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-20">
         <div className="w-full max-w-md">
           <div className="flex justify-center mb-10">

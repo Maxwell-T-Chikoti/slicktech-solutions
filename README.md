@@ -10,6 +10,10 @@ A Next.js application for booking tech services with a complete authentication s
 - Profile management
 - Responsive design with Tailwind CSS
 
+## Full Documentation
+
+For a complete architecture and implementation guide, see `APP_DOCUMENTATION.md`.
+
 ## Authentication System
 
 This app uses a custom local authentication system that stores user credentials securely in the database without requiring email verification.

@@ -49,7 +49,7 @@ const ForgotPasswordScreen = ({ onBack }: { onBack: () => void }) => {
   };
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="auth-screen flex min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 md:p-20">
         <div className="w-full max-w-md animate-fade-in">
           
