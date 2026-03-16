@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 type RequestBody = {
-  type?: 'scheduling' | 'demand';
+  type?: 'scheduling' | 'demand' | 'message-draft';
   payload?: any;
 };
 
@@ -58,6 +58,22 @@ const makeDemandPrompt = (payload: any) => {
   ].join('\n');
 };
 
+const makeMessageDraftPrompt = (payload: any) => {
+  return [
+    'You are an admin assistant for a service booking company.',
+    'Write a short, professional customer message draft.',
+    'Return STRICT JSON only with this shape:',
+    '{"draft":"..."}.',
+    'Rules:',
+    '- Keep the message concise (3-6 sentences).',
+    '- Use a polite and confident tone.',
+    '- Mention service, date, and time when available.',
+    '- If status is Rejected, provide a helpful next-step suggestion.',
+    '- Do not invent discounts, refunds, or guarantees.',
+    `Data: ${JSON.stringify(payload)}`,
+  ].join('\n');
+};
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GROQ_API_KEY;
@@ -74,7 +90,9 @@ export async function POST(req: NextRequest) {
 
     const userPrompt = body.type === 'scheduling'
       ? makeSchedulingPrompt(body.payload)
-      : makeDemandPrompt(body.payload);
+      : body.type === 'demand'
+      ? makeDemandPrompt(body.payload)
+      : makeMessageDraftPrompt(body.payload);
 
     const completionRes = await fetch(GROQ_URL, {
       method: 'POST',

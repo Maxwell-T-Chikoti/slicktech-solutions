@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
+import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaCalendarAlt, FaClock, FaMapMarkerAlt, FaChevronLeft, FaChevronRight, FaDownload, FaStar } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
 import jsPDF from 'jspdf';
@@ -33,6 +34,39 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   const [savingReview, setSavingReview] = useState(false);
   const [serviceAverageRating, setServiceAverageRating] = useState(0);
   const [bookingQrUrl, setBookingQrUrl] = useState('');
+  const [dialog, setDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    variant: 'alert' | 'confirm';
+    onConfirm?: () => void | Promise<void>;
+  }>(
+    {
+      isOpen: false,
+      title: '',
+      message: '',
+      variant: 'alert',
+    }
+  );
+
+  const showAlertDialog = (message: string, title = 'Notice') => {
+    setDialog({
+      isOpen: true,
+      title,
+      message,
+      variant: 'alert',
+    });
+  };
+
+  const showConfirmDialog = (message: string, onConfirm: () => void | Promise<void>, title = 'Confirm action') => {
+    setDialog({
+      isOpen: true,
+      title,
+      message,
+      variant: 'confirm',
+      onConfirm,
+    });
+  };
 
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -179,7 +213,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
   const handleSubmitReview = async () => {
     if (!booking?.id || reviewRating < 1) {
-      alert('Please select a rating before submitting your review.');
+      showAlertDialog('Please select a rating before submitting your review.');
       return;
     }
 
@@ -190,7 +224,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
       } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('You need to be logged in to submit a review.');
+        showAlertDialog('You need to be logged in to submit a review.');
         return;
       }
 
@@ -210,7 +244,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
       if (error) {
         console.error('Error saving review:', error);
-        alert('Failed to save review. Please try again.');
+        showAlertDialog('Failed to save review. Please try again.');
         return;
       }
 
@@ -219,7 +253,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
       if (serviceReviews?.length) {
         setServiceAverageRating(serviceReviews.reduce((sum: number, review: any) => sum + review.rating, 0) / serviceReviews.length);
       }
-      alert(existingReview ? 'Review updated successfully.' : 'Thank you for your review!');
+      showAlertDialog(existingReview ? 'Review updated successfully.' : 'Thank you for your review!', 'Review saved');
     } finally {
       setSavingReview(false);
     }
@@ -232,7 +266,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
   const handleSaveReschedule = async () => {
     if (!tempDate || !tempTime) {
-      alert('Please select both a date and time');
+      showAlertDialog('Please select both a date and time');
       return;
     }
 
@@ -245,14 +279,14 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
     if (error) {
       console.error('Error during final availability check:', error);
-      alert('Something went wrong. Please try again.');
+      showAlertDialog('Something went wrong. Please try again.');
       return;
     }
 
     const isSlotTaken = latestBookings?.some(b => b.date === tempDate && b.time === tempTime);
 
     if (isSlotTaken) {
-      alert('❌ This date and time slot is already booked. Please select a different time.');
+      showAlertDialog('This date and time slot is already booked. Please select a different time.', 'Slot unavailable');
       // Refresh booked slots so UI reflects latest data
       await fetchBookedSlots();
       setTempTime('');
@@ -267,7 +301,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
 
     if (updateError) {
       console.error('Error updating booking:', updateError);
-      alert('Failed to save reschedule. Please try again.');
+      showAlertDialog('Failed to save reschedule. Please try again.');
       return;
     }
 
@@ -285,12 +319,14 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
   };
 
   const handleCancel = async () => {
-    if (window.confirm('Are you sure you want to cancel this booking?')) {
+    showConfirmDialog('Are you sure you want to cancel this booking?', async () => {
       setBookings(prev => prev.filter(b => b.id !== booking.id));
       onNavigate('bookings');
       const { error } = await supabase.from('bookings').delete().eq('id', booking.id);
-      if (error) console.error('Error deleting booking:', error);
-    }
+      if (error) {
+        console.error('Error deleting booking:', error);
+      }
+    }, 'Cancel booking');
   };
 
   const handleStartReschedule = () => {
@@ -411,7 +447,7 @@ const BookingDetails = ({ booking, setBookings, onNavigate, onLogout, startResch
       pdf.save(`SlickTech_Booking_${booking.id}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      showAlertDialog('Failed to generate PDF. Please try again.', 'PDF error');
     } finally {
       document.body.removeChild(pdfContent);
     }
@@ -622,7 +658,7 @@ ${certificateQrDataUrl ? `<div style="position:absolute;top:24px;left:24px;backg
       pdf.save(`SlickTech_Completion_Certificate_${booking.id}.pdf`);
     } catch (error) {
       console.error('Error generating certificate:', error);
-      alert('Failed to generate certificate. Please try again.');
+      showAlertDialog('Failed to generate certificate. Please try again.', 'Certificate error');
     } finally {
       document.body.removeChild(certificateContent);
     }
@@ -726,7 +762,7 @@ ${certificateQrDataUrl ? `<div style="position:absolute;top:24px;left:24px;backg
   //     pdf.save(`SlickTech_Completion_Certificate_${booking.id}.pdf`);
   //   } catch (error) {
   //     console.error('Error generating certificate:', error);
-  //     alert('Failed to generate certificate. Please try again.');
+  //     // handle certificate generation error here.
   //   } finally {
   //     document.body.removeChild(certificateContent);
   //   }
@@ -1130,6 +1166,22 @@ ${certificateQrDataUrl ? `<div style="position:absolute;top:24px;left:24px;backg
           )}
         </div>
       </div>
+
+      <AppAlertDialog
+        isOpen={dialog.isOpen}
+        title={dialog.title}
+        message={dialog.message}
+        variant={dialog.variant}
+        onConfirm={() => {
+          const run = dialog.onConfirm;
+          setDialog((prev) => ({ ...prev, isOpen: false }));
+          if (run) {
+            void run();
+          }
+        }}
+        onCancel={() => setDialog((prev) => ({ ...prev, isOpen: false }))}
+        confirmLabel={dialog.variant === 'confirm' ? 'Yes, continue' : 'OK'}
+      />
     </div>
   );
 };

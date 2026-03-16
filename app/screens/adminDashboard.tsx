@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import supabase from '@/app/lib/supabaseClient';
+import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
@@ -98,6 +99,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   // customer messaging
   const [customMessage, setCustomMessage] = useState<string>('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [isDraftingMessage, setIsDraftingMessage] = useState(false);
   // availability / blocked dates
   const [blockedDates, setBlockedDates] = useState<any[]>([]);
   const [newBlockedDate, setNewBlockedDate] = useState<string>('');
@@ -106,6 +108,44 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [aiDemandForecast, setAiDemandForecast] = useState<DemandForecastRow[] | null>(null);
   const [aiDemandSummary, setAiDemandSummary] = useState<DemandModelSummary | null>(null);
   const [aiDemandLoading, setAiDemandLoading] = useState(false);
+  const [dialog, setDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    variant: 'alert' | 'confirm';
+    confirmLabel?: string;
+    onConfirm?: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'alert',
+  });
+
+  const showAlertDialog = (message: string, title = 'Notice') => {
+    setDialog({
+      isOpen: true,
+      title,
+      message,
+      variant: 'alert',
+    });
+  };
+
+  const showConfirmDialog = (
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    title = 'Confirm action',
+    confirmLabel = 'Yes, continue'
+  ) => {
+    setDialog({
+      isOpen: true,
+      title,
+      message,
+      variant: 'confirm',
+      confirmLabel,
+      onConfirm,
+    });
+  };
 
   // fetch services function
   const fetchServices = async () => {
@@ -205,7 +245,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     if (error) {
       console.error('Error fetching bookings:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
-      alert(`Error fetching bookings: ${error.message}`);
+      showAlertDialog(`Error fetching bookings: ${error.message}`, 'Data load failed');
       setLoading(false);
       return;
     }
@@ -373,7 +413,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     if (error) {
       console.error('Error updating booking:', error);
-      alert('Failed to update booking status');
+      showAlertDialog('Failed to update booking status', 'Update failed');
     } else {
       logActivity(`Updated booking #${id} status to ${newStatus}`);
       // Send email notification to customer
@@ -452,6 +492,60 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
   };
 
+  const buildFallbackCustomerMessage = (booking: BookingWithProfile) => {
+    const customerName = booking.user_name || 'Customer';
+    if (booking.status === 'Rejected') {
+      return `Hi ${customerName},\n\nThank you for your booking request for ${booking.service}. Unfortunately, we are unable to proceed with the selected slot (${booking.date} at ${booking.time}). Please reply with an alternative date and time and we will prioritize your request.\n\nKind regards,\nSlickTech Solutions`;
+    }
+
+    return `Hi ${customerName},\n\nThis is a quick update regarding your ${booking.service} booking scheduled for ${booking.date} at ${booking.time}. Your booking is currently marked as ${booking.status}. If you need any changes or have questions, please reply to this message and we will assist you promptly.\n\nKind regards,\nSlickTech Solutions`;
+  };
+
+  const generateAiMessageDraft = async () => {
+    if (!selectedBooking) return;
+
+    setIsDraftingMessage(true);
+    try {
+      const response = await fetch('/api/ai-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'message-draft',
+          payload: {
+            customerName: selectedBooking.user_name ?? 'Customer',
+            customerEmail: selectedBooking.user_email ?? '',
+            service: selectedBooking.service,
+            date: selectedBooking.date,
+            time: selectedBooking.time,
+            status: selectedBooking.status,
+            price: selectedBooking.price,
+            description: selectedBooking.description,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('AI draft generation failed');
+      }
+
+      const json = await response.json();
+      const draft = json?.result?.draft;
+
+      if (!draft || typeof draft !== 'string') {
+        throw new Error('Invalid AI draft response');
+      }
+
+      setCustomMessage(draft.trim());
+      addNotification('AI draft generated', 'success');
+    } catch (error) {
+      console.warn('AI draft unavailable, using fallback template:', error);
+      setCustomMessage(buildFallbackCustomerMessage(selectedBooking));
+      addNotification('AI unavailable. A smart template was added instead.', 'warning');
+    } finally {
+      setIsDraftingMessage(false);
+    }
+  };
+
   // Bulk actions
   const handleSelectAllBookings = () => {
     if (selectedBookings.length === filteredBookings.length) {
@@ -485,29 +579,34 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchBookingsWithProfiles();
     } catch (error) {
       console.error('Error bulk updating:', error);
-      alert('Failed to update selected bookings');
+      showAlertDialog('Failed to update selected bookings', 'Bulk update failed');
     }
   };
 
   const bulkDeleteBookings = async () => {
     if (selectedBookings.length === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedBookings.length} bookings?`)) return;
+    showConfirmDialog(
+      `Are you sure you want to delete ${selectedBookings.length} bookings?`,
+      async () => {
+        try {
+          const { error } = await supabase
+            .from('bookings')
+            .delete()
+            .in('id', selectedBookings);
 
-    try {
-      const { error } = await supabase
-        .from('bookings')
-        .delete()
-        .in('id', selectedBookings);
+          if (error) throw error;
 
-      if (error) throw error;
-
-      logActivity(`Deleted ${selectedBookings.length} bookings`);
-      setSelectedBookings([]);
-      fetchBookingsWithProfiles();
-    } catch (error) {
-      console.error('Error deleting bookings:', error);
-      alert('Failed to delete selected bookings');
-    }
+          logActivity(`Deleted ${selectedBookings.length} bookings`);
+          setSelectedBookings([]);
+          fetchBookingsWithProfiles();
+        } catch (error) {
+          console.error('Error deleting bookings:', error);
+          showAlertDialog('Failed to delete selected bookings', 'Delete failed');
+        }
+      },
+      'Delete bookings',
+      'Delete'
+    );
   };
 
   // Service management
@@ -586,25 +685,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   const deleteService = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this service?')) return;
-    try {
-      const { error } = await supabase
-        .from('services')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      addNotification('Service removed', 'success');
-      if (editingService && editingService.id === id) {
-        setEditingService(null);
-        setNewServiceTitle('');
-        setNewServicePrice('');
+    showConfirmDialog('Are you sure you want to delete this service?', async () => {
+      try {
+        const { error } = await supabase
+          .from('services')
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        addNotification('Service removed', 'success');
+        if (editingService && editingService.id === id) {
+          setEditingService(null);
+          setNewServiceTitle('');
+          setNewServicePrice('');
+        }
+        fetchServices();
+        logActivity(`Deleted service id ${id}`);
+      } catch (err) {
+        console.error('Error deleting service:', err);
+        addNotification(`Failed to delete service: ${(err as any)?.message || 'Unknown error'}`, 'error');
       }
-      fetchServices();
-      logActivity(`Deleted service id ${id}`);
-    } catch (err) {
-      console.error('Error deleting service:', err);
-      addNotification(`Failed to delete service: ${(err as any)?.message || 'Unknown error'}`, 'error');
-    }
+    }, 'Delete service', 'Delete');
   };
 
   // Activity logging
@@ -962,7 +1062,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       pdf.save(`SlickTech_Bookings_Report_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      showAlertDialog('Failed to generate PDF. Please try again.', 'PDF error');
     } finally {
       document.body.removeChild(pdfContent);
     }
@@ -2503,6 +2603,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
                         <p className="text-sm font-semibold text-slate-900 mb-1">Send Message to Customer</p>
                         <p className="text-xs text-slate-400 mb-3">An email will be sent directly to {selectedBooking.user_email}.</p>
+                        <div className="flex justify-end mb-3">
+                          <button
+                            onClick={generateAiMessageDraft}
+                            disabled={isDraftingMessage}
+                            className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-xs font-semibold transition-all"
+                          >
+                            {isDraftingMessage ? 'Generating draft...' : 'Generate AI Draft'}
+                          </button>
+                        </div>
                         <textarea
                           rows={3}
                           placeholder="Type a custom message, e.g. instructions, rescheduling notes, follow-up…"
@@ -2529,6 +2638,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           </div>
         </>
       )}
+
+      <AppAlertDialog
+        isOpen={dialog.isOpen}
+        title={dialog.title}
+        message={dialog.message}
+        variant={dialog.variant}
+        confirmLabel={dialog.confirmLabel || (dialog.variant === 'confirm' ? 'Yes, continue' : 'OK')}
+        onConfirm={() => {
+          const action = dialog.onConfirm;
+          setDialog((prev) => ({ ...prev, isOpen: false }));
+          if (action) {
+            void action();
+          }
+        }}
+        onCancel={() => setDialog((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

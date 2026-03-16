@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/app/components/Navbar';
+import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaFacebook, FaTwitter, FaInstagram, FaLinkedin, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import supabase from '@/app/lib/supabaseClient';
 
@@ -40,6 +41,11 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [suggestedSlot, setSuggestedSlot] = useState<SuggestedSlot | null>(null);
   const [backupSlots, setBackupSlots] = useState<SuggestedSlot[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [uiNotice, setUiNotice] = useState<{ isOpen: boolean; title: string; message: string }>({
+    isOpen: false,
+    title: '',
+    message: '',
+  });
   
   // Date picker state
   const [currentDate] = useState(new Date());
@@ -146,8 +152,12 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   };
 
   const handleGenerateAISuggestion = async () => {
+    const showNotice = (message: string, title = 'Notice') => {
+      setUiNotice({ isOpen: true, title, message });
+    };
+
     if (!bookingData.service) {
-      alert('Please select a service first so we can generate a smart schedule suggestion.');
+      showNotice('Please select a service first so we can generate a smart schedule suggestion.');
       return;
     }
 
@@ -238,18 +248,18 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
         setSuggestedSlot(null);
         setBackupSlots([]);
-        alert('AI responded but did not return a valid suggestion.');
+        showNotice('AI responded but did not return a valid suggestion.');
         return;
       } catch (aiError) {
         console.warn('AI model scheduling suggestion failed:', aiError);
         setSuggestedSlot(null);
         setBackupSlots([]);
-        alert('AI scheduling is unavailable right now. Fallback is disabled for testing.');
+        showNotice('AI scheduling is unavailable right now. Fallback is disabled for testing.');
         return;
       }
     } catch (error) {
       console.error('Error generating AI schedule suggestion:', error);
-      alert('Unable to generate a suggestion right now. Please try again.');
+      showNotice('Unable to generate a suggestion right now. Please try again.');
     } finally {
       setIsSuggesting(false);
     }
@@ -266,8 +276,12 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const showNotice = (message: string, title = 'Notice') => {
+      setUiNotice({ isOpen: true, title, message });
+    };
+
     if (!bookingData.service || !bookingData.date) {
-      alert('Please fill in all required fields');
+      showNotice('Please fill in all required fields');
       return;
     }
 
@@ -299,7 +313,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         console.error('Error inserting booking:', error);
         console.error('Error as JSON:', JSON.stringify(error, null, 2));
         console.error('error details:', error);
-        alert('There was an error saving your booking. Please try again.');
+        showNotice('There was an error saving your booking. Please try again.');
       } else {
         console.log('Booking inserted:', data);
         const insertedBookingId = (data as any)?.[0]?.id || null;
@@ -886,6 +900,13 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
           <p>Created with love by SlickTech Technologies</p>
         </div>
       </footer>
+
+      <AppAlertDialog
+        isOpen={uiNotice.isOpen}
+        title={uiNotice.title}
+        message={uiNotice.message}
+        onConfirm={() => setUiNotice((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
