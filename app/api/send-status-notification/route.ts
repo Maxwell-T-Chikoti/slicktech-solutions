@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       : `Booking ${status} — ${service ?? 'SlickTech Solutions'}`;
 
     const result = await resend.emails.send({
-      from: 'SlickTech Solutions <onboarding@resend.dev>',
+      from: process.env.RESEND_FROM_EMAIL ?? 'SlickTech Solutions <onboarding@resend.dev>',
       to: userEmail,
       subject,
       html: htmlContent,

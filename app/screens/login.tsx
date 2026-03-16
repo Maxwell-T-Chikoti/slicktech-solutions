@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -9,15 +9,22 @@ import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
 import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye, FaHome } from 'react-icons/fa';
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
-import AdminLoginScreen from './adminLogin';
+import AdminDashboard from './adminDashboard';
 import ForgotPasswordScreen from './forgotPassword';
 import { FaUserShield } from 'react-icons/fa';
 
 const LoginScreen = () => {
+  const INACTIVITY_TIMEOUT_MS = 1 * 60 * 1000;
+  const WARNING_WINDOW_MS = 30 * 1000;
+
   const [isSignup, setIsSignup] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [userRole, setUserRole] = useState<'user' | 'admin' | null>(null);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [showInactivityWarning, setShowInactivityWarning] = useState(false);
+  const [countdownSeconds, setCountdownSeconds] = useState(30);
+
+  const inactivityDeadlineRef = useRef<number>(0);
 
   
   // New States for Auth
@@ -26,19 +33,48 @@ const LoginScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
   useEffect(() => {
-    const userSession = localStorage.getItem('slicktech_user');
-    if (userSession) {
-      try {
-        const user = JSON.parse(userSession);
-        if (user.loggedIn) {
-          setIsLoggedIn(true);
+    const restoreSession = async () => {
+      const userSession = localStorage.getItem('slicktech_user');
+      if (userSession) {
+        try {
+          const user = JSON.parse(userSession);
+          if (user.loggedIn) {
+            setUserRole(user.role === 'admin' ? 'admin' : 'user');
+            setIsLoggedIn(true);
+            return;
+          }
+        } catch (err) {
+          // Invalid session, clear it
+          localStorage.removeItem('slicktech_user');
         }
-      } catch (err) {
-        // Invalid session, clear it
-        localStorage.removeItem('slicktech_user');
       }
-    }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        return;
+      }
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        await supabase.auth.signOut();
+        return;
+      }
+
+      setUserRole(profileData.role === 'admin' ? 'admin' : 'user');
+      setIsLoggedIn(true);
+    };
+
+    restoreSession();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -74,29 +110,28 @@ const LoginScreen = () => {
         return;
       }
 
-      // Check if user is an admin
-      if (profileData.role === 'admin') {
-        await supabase.auth.signOut();
-        setError('Admins must use the admin login portal');
-        setLoading(false);
-        return;
-      }
+      const role = profileData.role === 'admin' ? 'admin' : 'user';
 
       // Create user session in localStorage
-      const userSession = {
-        id: profileData.id,
-        email: profileData.email,
-        first_name: profileData.first_name,
-        surname: profileData.surname,
-        phone: profileData.phone,
-        location: profileData.location,
-        loggedIn: true,
-        loginTime: new Date().toISOString()
-      };
-
-      localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+      if (role === 'user') {
+        const userSession = {
+          id: profileData.id,
+          email: profileData.email,
+          first_name: profileData.first_name,
+          surname: profileData.surname,
+          phone: profileData.phone,
+          location: profileData.location,
+          role,
+          loggedIn: true,
+          loginTime: new Date().toISOString()
+        };
+        localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+      } else {
+        localStorage.removeItem('slicktech_user');
+      }
 
       // Success!
+      setUserRole(role);
       setIsLoggedIn(true);
       setLoading(false);
     } catch (err) {
@@ -106,22 +141,107 @@ const LoginScreen = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback((reason?: 'inactivity') => {
+    supabase.auth.signOut();
     localStorage.removeItem('slicktech_user');
+    setUserRole(null);
     setIsLoggedIn(false);
+    setShowInactivityWarning(false);
+    setCountdownSeconds(30);
+    if (reason === 'inactivity') {
+      setError('You were logged out due to inactivity. Please sign in again.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setShowInactivityWarning(false);
+      setCountdownSeconds(30);
+      return;
+    }
+
+    const resetInactivityTimer = () => {
+      inactivityDeadlineRef.current = Date.now() + INACTIVITY_TIMEOUT_MS;
+      setShowInactivityWarning(false);
+      setCountdownSeconds(30);
+    };
+
+    const handleInactivityTick = () => {
+      const remainingMs = inactivityDeadlineRef.current - Date.now();
+
+      if (remainingMs <= 0) {
+        handleLogout('inactivity');
+        return;
+      }
+
+      if (remainingMs <= WARNING_WINDOW_MS) {
+        setShowInactivityWarning(true);
+        setCountdownSeconds(Math.ceil(remainingMs / 1000));
+      } else {
+        setShowInactivityWarning(false);
+      }
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      'mousemove',
+      'mousedown',
+      'keydown',
+      'scroll',
+      'touchstart',
+      'click',
+    ];
+
+    resetInactivityTimer();
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetInactivityTimer, { passive: true });
+    });
+
+    const tickInterval = window.setInterval(handleInactivityTick, 1000);
+
+    return () => {
+      window.clearInterval(tickInterval);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer);
+      });
+    };
+  }, [INACTIVITY_TIMEOUT_MS, WARNING_WINDOW_MS, isLoggedIn, handleLogout]);
+
+  const renderInactivityWarning = () => {
+    if (!showInactivityWarning || !isLoggedIn) {
+      return null;
+    }
+
+    return (
+      <div className="fixed bottom-5 right-5 z-[100] max-w-sm rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-xl">
+        <p className="text-sm font-semibold text-amber-900">Session expiring soon</p>
+        <p className="mt-1 text-xs text-amber-800">
+          You will be logged out in <span className="font-bold">{countdownSeconds}s</span> due to inactivity.
+        </p>
+      </div>
+    );
   };
 
   if (isForgotPassword) {
     return <ForgotPasswordScreen onBack={() => setIsForgotPassword(false)} />;
   }
 
-  if (isAdminMode) {
-    // show admin login / dashboard flow
-    return <AdminLoginScreen onBack={() => setIsAdminMode(false)} />;
+  if (isLoggedIn && userRole === 'admin') {
+    return (
+      <>
+        <AdminDashboard onLogout={handleLogout} />
+        {renderInactivityWarning()}
+      </>
+    );
   }
 
-  if (isLoggedIn) {
-    return <UserDashboard onLogout={handleLogout} />;
+  if (isLoggedIn && userRole === 'user') {
+    return (
+      <>
+        <UserDashboard onLogout={handleLogout} />
+        {renderInactivityWarning()}
+      </>
+    );
   }
 
   if (isSignup) {
@@ -158,16 +278,7 @@ const LoginScreen = () => {
             </div>
           </div>
 
-          <div className="flex justify-between items-center mb-2">
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Welcome Back</h1>
-            <button
-              onClick={() => setIsAdminMode(true)}
-              className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors"
-              title="Admin login"
-            >
-              <FaUserShield className="text-slate-600 hover:text-slate-800" />
-            </button>
-          </div>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">Welcome Back</h1>
           <p className="text-slate-500 text-sm mb-8">
             Sign in to your account to continue<br />
             Don't have an account? <span className="text-blue-600 font-semibold cursor-pointer hover:underline transition-colors" onClick={() => setIsSignup(true)}>Create one here</span>
