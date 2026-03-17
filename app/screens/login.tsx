@@ -43,7 +43,7 @@ const LoginScreen = () => {
 
   useEffect(() => {
     const restoreSession = async () => {
-      const userSession = localStorage.getItem('slicktech_user');
+      const userSession = sessionStorage.getItem('slicktech_user');
       if (userSession) {
         try {
           const user = JSON.parse(userSession);
@@ -54,7 +54,7 @@ const LoginScreen = () => {
           }
         } catch (err) {
           // Invalid session, clear it
-          localStorage.removeItem('slicktech_user');
+          sessionStorage.removeItem('slicktech_user');
         }
       }
 
@@ -126,7 +126,7 @@ const LoginScreen = () => {
 
       const role = mapToAppRole(profileData.role);
 
-      // Create user session in localStorage
+      // Create user session in sessionStorage (tab-scoped)
       if (role === 'user' || role === 'staff') {
         const userSession = {
           id: profileData.id,
@@ -139,9 +139,9 @@ const LoginScreen = () => {
           loggedIn: true,
           loginTime: new Date().toISOString()
         };
-        localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+        sessionStorage.setItem('slicktech_user', JSON.stringify(userSession));
       } else {
-        localStorage.removeItem('slicktech_user');
+        sessionStorage.removeItem('slicktech_user');
       }
 
       // Success!
@@ -157,7 +157,7 @@ const LoginScreen = () => {
 
   const handleLogout = useCallback((reason?: 'inactivity') => {
     supabase.auth.signOut();
-    localStorage.removeItem('slicktech_user');
+    sessionStorage.removeItem('slicktech_user');
     setUserRole(null);
     setIsLoggedIn(false);
     setEmail('');

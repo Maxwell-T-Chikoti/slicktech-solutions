@@ -40,7 +40,7 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const userSession = localStorage.getItem('slicktech_user');
+      const userSession = sessionStorage.getItem('slicktech_user');
       if (!userSession) { onLogout(); return; }
       const u = JSON.parse(userSession);
       setUser(u);

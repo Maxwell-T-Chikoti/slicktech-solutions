@@ -136,7 +136,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
         return;
       }
 
-      // Store user session in localStorage (simple auth)
+      // Store user session in sessionStorage (tab-scoped auth)
       const userSession = {
         id: profileData.id,
         email: profileData.email,
@@ -148,7 +148,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
         loginTime: new Date().toISOString()
       };
 
-      localStorage.setItem('slicktech_user', JSON.stringify(userSession));
+      sessionStorage.setItem('slicktech_user', JSON.stringify(userSession));
 
       // Success!
       setSuccess('Registration successful! Welcome to SlickTech!');

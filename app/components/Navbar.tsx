@@ -24,7 +24,7 @@ const Navbar = ({ currentPage = 'home', onNavigate, onLogout }: NavbarProps) => 
   const { openChat } = useChatbot();
 
   const fetchNotifications = async () => {
-    const userSession = window.localStorage.getItem('slicktech_user');
+    const userSession = window.sessionStorage.getItem('slicktech_user');
     if (!userSession) return;
     const user = JSON.parse(userSession);
     const { data } = await supabase

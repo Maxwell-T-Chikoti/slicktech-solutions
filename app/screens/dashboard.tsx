@@ -35,8 +35,8 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
 });
 
   const fetchBookings = async () => {
-    // Get user from localStorage
-    const userSession = localStorage.getItem('slicktech_user');
+    // Get user from tab-scoped session storage
+    const userSession = sessionStorage.getItem('slicktech_user');
     if (!userSession) {
       onLogout?.();
       return;
