@@ -57,7 +57,6 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from('profiles')
         .select('id, first_name, surname, email, phone, location, role')
-        .eq('role', 'staff')
         .order('first_name', { ascending: true }),
       supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
@@ -73,17 +72,40 @@ export async function GET(req: NextRequest) {
     const users = authUsersData?.users || [];
     const authMap = new Map(users.map((u) => [u.id, u]));
 
-    const staff = (profiles || []).map((profile) => {
-      const authUser: any = authMap.get(profile.id);
-      const bannedUntil = authUser?.banned_until || null;
-      const isDisabled = bannedUntil ? new Date(bannedUntil).getTime() > Date.now() : false;
+    const isStaffRole = (role: unknown) => String(role || '').trim().toLowerCase() === 'staff';
 
-      return {
-        ...profile,
-        isDisabled,
-        bannedUntil,
-      };
+    const profileStaff = (profiles || []).filter((profile: any) => isStaffRole(profile.role));
+    const profileStaffMap = new Map(profileStaff.map((profile: any) => [profile.id, profile]));
+
+    // Include auth users tagged as staff even if profile role data is inconsistent in production.
+    users.forEach((user: any) => {
+      const metadataRole = user?.user_metadata?.role || user?.app_metadata?.role;
+      if (isStaffRole(metadataRole) && !profileStaffMap.has(user.id)) {
+        profileStaffMap.set(user.id, {
+          id: user.id,
+          first_name: user?.user_metadata?.first_name || 'Staff',
+          surname: user?.user_metadata?.surname || 'Member',
+          email: user?.email || '',
+          phone: user?.user_metadata?.phone || '',
+          location: user?.user_metadata?.location || '',
+          role: 'staff',
+        });
+      }
     });
+
+    const staff = Array.from(profileStaffMap.values())
+      .map((profile: any) => {
+        const authUser: any = authMap.get(profile.id);
+        const bannedUntil = authUser?.banned_until || null;
+        const isDisabled = bannedUntil ? new Date(bannedUntil).getTime() > Date.now() : false;
+
+        return {
+          ...profile,
+          isDisabled,
+          bannedUntil,
+        };
+      })
+      .sort((a: any, b: any) => `${a.first_name} ${a.surname}`.localeCompare(`${b.first_name} ${b.surname}`));
 
     return NextResponse.json({ staff });
   } catch (error: any) {

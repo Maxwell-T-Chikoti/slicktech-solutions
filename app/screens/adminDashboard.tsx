@@ -571,12 +571,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         (b) => b.status === 'Pending'
       ).length;
       const confirmed = bookingsWithProfiles.filter(
-        (b) => b.status === 'Confirmed'
+        (b) => b.status === 'Complete'
       ).length;
       
-      // Total revenue only from confirmed bookings using service price
+      // Total revenue only from completed bookings using service price
       const revenue = bookingsWithProfiles
-        .filter((b) => b.status === 'Confirmed')
+        .filter((b) => b.status === 'Complete')
         .reduce((sum, b) => {
           const priceNum = parseFloat(b.service_price?.replace(/[^0-9.]/g, '') || '0');
           return sum + priceNum;
@@ -591,7 +591,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         }
         const current = serviceMap.get(b.service)!;
         current.count += 1;
-        if (b.status === 'Confirmed') current.revenue += priceNum;
+        if (b.status === 'Complete') current.revenue += priceNum;
       });
 
       const breakdown = Array.from(serviceMap.entries()).map(([service, data]) => ({
@@ -1448,7 +1448,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           
           <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 25px; border-radius: 12px; border: 1px solid #86efac;">
             <div style="display: flex; align-items: center; justify-between; margin-bottom: 15px;">
-              <span style="color: #166534; font-size: 14px; font-weight: bold;">Confirmed Bookings</span>
+              <span style="color: #166534; font-size: 14px; font-weight: bold;">Completed Bookings</span>
               <span style="font-size: 20px;">✅</span>
             </div>
             <div style="font-size: 36px; font-weight: bold; color: #1e293b; margin-bottom: 8px;">${metrics.confirmedBookings}</div>
@@ -2145,7 +2145,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-green-400/20 to-green-600/20 rounded-2xl p-6 border border-green-200/40 hover:border-green-300/60 transition-all hover:shadow-2xl hover:shadow-green-500/20 hover:scale-105 transform">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Confirmed</p>
+                        <p className="text-slate-700 text-sm font-semibold">Completed</p>
                         <FaCheck className="text-green-500 text-lg" />
                       </div>
                       <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.confirmedBookings}</p>
@@ -2160,7 +2160,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         <FaArrowUp className="text-purple-500 text-lg" />
                       </div>
                       <p className="text-4xl font-bold text-slate-900 mt-3">${metrics.totalRevenue.toFixed(2)}</p>
-                      <p className="text-xs text-slate-600 mt-2">From confirmed bookings</p>
+                      <p className="text-xs text-slate-600 mt-2">From completed bookings</p>
                     </div>
                   </div>
 

@@ -76,6 +76,10 @@ export async function POST(req: NextRequest) {
         surname,
         phone,
         location,
+        role: 'staff',
+      },
+      app_metadata: {
+        role: 'staff',
       },
     });
 
