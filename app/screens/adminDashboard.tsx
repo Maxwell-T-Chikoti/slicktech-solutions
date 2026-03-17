@@ -34,6 +34,7 @@ interface BookingWithProfile {
   staff_notes?: string | null;
   staff_completion_report?: string | null;
   staff_completed_at?: string | null;
+  location?: string;
 }
 
 type StaffMember = {
