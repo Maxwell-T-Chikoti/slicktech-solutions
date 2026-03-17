@@ -5,11 +5,15 @@ import Navbar from '@/app/components/Navbar';
 import { FaFacebook, FaTwitter, FaInstagram, FaLinkedin, FaUser, FaEnvelope, FaPhone, FaMapMarkerAlt, FaLock, FaMoon, FaSun } from 'react-icons/fa';
 import { useTheme } from '@/app/components/ThemeProvider';
 import supabase from '@/app/lib/supabaseClient';
+import PhoneInputWithCountry from '@/app/components/PhoneInputWithCountry';
 
 interface ProfileScreenProps {
   onNavigate: (page: string, service?: string) => void;
   onLogout: () => void;
 }
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MOBILE_REGEX = /^\+?[1-9]\d{7,14}$/;
 
 const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -25,6 +29,12 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
   });
 
   const [formData, setFormData] = useState(profileData);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   // fetch profile from DB
   useEffect(() => {
@@ -59,6 +69,7 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+
     setFormData({
       ...formData,
       [name]: value
@@ -66,7 +77,29 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
   };
 
   const handleSaveChanges = async () => {
-    setProfileData(formData);
+    setFormError(null);
+    setFormMessage(null);
+
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    const normalizedPhone = formData.phone.trim();
+
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!MOBILE_REGEX.test(normalizedPhone)) {
+      setFormError('Please enter a valid mobile number (for example: +263771234567).');
+      return;
+    }
+
+    const sanitizedForm = {
+      ...formData,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+    };
+
+    setProfileData(sanitizedForm);
     setIsEditing(false);
     // update DB
     const {
@@ -74,20 +107,54 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
     } = await supabase.auth.getUser();
     if (user) {
       const { error } = await supabase.from('profiles').update({
-        first_name: formData.firstName,
-        surname: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        location: formData.location,
-        bio: formData.bio
+        first_name: sanitizedForm.firstName,
+        surname: sanitizedForm.lastName,
+        email: sanitizedForm.email,
+        phone: sanitizedForm.phone,
+        location: sanitizedForm.location,
+        bio: sanitizedForm.bio
       }).eq('id', user.id);
       if (error) {
         console.error('Error updating profile:', error);
         console.error('Error JSON:', JSON.stringify(error, null, 2));
         // some PostgrestError properties may not exist, so we log the object directly instead of accessing them
         console.error('error details:', error);
+        setFormError(error.message || 'Could not save profile changes.');
+        return;
       }
+
+      setFormMessage('Profile updated successfully.');
     }
+  };
+
+  const handlePasswordUpdate = async () => {
+    setPasswordError(null);
+    setPasswordMessage(null);
+
+    const newPassword = passwordForm.newPassword.trim();
+    const confirmPassword = passwordForm.confirmPassword.trim();
+
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters long.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New password and confirm password do not match.');
+      return;
+    }
+
+    setUpdatingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setUpdatingPassword(false);
+
+    if (error) {
+      setPasswordError(error.message || 'Failed to update password.');
+      return;
+    }
+
+    setPasswordForm({ newPassword: '', confirmPassword: '' });
+    setPasswordMessage('Password updated successfully.');
   };
 
   const handleCancel = () => {
@@ -232,6 +299,9 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Account Settings</h1>
           <p className="text-gray-600 mb-8">Manage your personal information and account preferences</p>
 
+          {formError && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{formError}</div>}
+          {formMessage && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{formMessage}</div>}
+
           <div className="bg-white rounded-lg shadow-md p-6 mb-8 border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Appearance</h2>
@@ -313,6 +383,8 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
                         name="email"
                         value={formData.email}
                         onChange={handleInputChange}
+                        pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                        title="Enter a valid email address"
                         className="w-full outline-none text-gray-700"
                       />
                     </div>
@@ -323,13 +395,15 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
                     <div className="flex items-center border-b border-gray-300 pb-2">
                       <FaPhone className="text-gray-400 mr-3" />
-                      <input
-                        type="tel"
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        className="w-full outline-none text-gray-700"
-                      />
+                      <div className="w-full">
+                        <PhoneInputWithCountry
+                          value={formData.phone}
+                          onChange={(phoneValue) => setFormData((prev: any) => ({ ...prev, phone: phoneValue }))}
+                          required
+                          selectClassName="w-44 px-2 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          inputClassName="flex-1 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -443,18 +517,36 @@ const ProfileScreen = ({ onNavigate, onLogout }: ProfileScreenProps) => {
           <div className="bg-white rounded-lg shadow-md p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-6">Security</h3>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Change Password</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">New Password</label>
               <div className="flex items-center border-b border-gray-300 pb-2 mb-6">
                 <FaLock className="text-gray-400 mr-3" />
                 <input
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Enter new password"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
                   className="w-full outline-none text-gray-700 placeholder-gray-400"
-                  disabled
                 />
               </div>
-              <button className="bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 px-6 rounded transition-colors">
-                Update Password
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Confirm New Password</label>
+              <div className="flex items-center border-b border-gray-300 pb-2 mb-6">
+                <FaLock className="text-gray-400 mr-3" />
+                <input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                  className="w-full outline-none text-gray-700 placeholder-gray-400"
+                />
+              </div>
+              {passwordError && <p className="mb-3 text-sm text-red-600">{passwordError}</p>}
+              {passwordMessage && <p className="mb-3 text-sm text-green-600">{passwordMessage}</p>}
+              <button
+                onClick={handlePasswordUpdate}
+                disabled={updatingPassword}
+                className="bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white font-bold py-2 px-6 rounded transition-colors"
+              >
+                {updatingPassword ? 'Updating...' : 'Update Password'}
               </button>
             </div>
           </div>

@@ -21,26 +21,6 @@ type SuggestedSlot = {
   cancellationRisk: number;
 };
 
-type ServiceItem = {
-  title: string;
-  price: string;
-  description?: string;
-  features?: string[];
-};
-
-type ServiceExplainResult = {
-  plainExplanation: string;
-  whatToExpect: string[];
-  prepChecklist: string[];
-};
-
-type TroubleshootingResult = {
-  likelyCauses: string[];
-  guidedSteps: Array<{ step: string; why: string }>;
-  bookNowRecommendation: 'yes' | 'no' | 'monitor';
-  summary: string;
-};
-
 const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingScreenProps) => {
   const [bookingData, setBookingData] = useState({
     service: selectedService || '',
@@ -55,17 +35,12 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [services, setServices] = useState<ServiceItem[]>([]);
+  const [services, setServices] = useState<{title: string; price: string}[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [blockedDates, setBlockedDates] = useState<Set<string>>(new Set());
   const [suggestedSlot, setSuggestedSlot] = useState<SuggestedSlot | null>(null);
   const [backupSlots, setBackupSlots] = useState<SuggestedSlot[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  const [isExplainingService, setIsExplainingService] = useState(false);
-  const [serviceExplainResult, setServiceExplainResult] = useState<ServiceExplainResult | null>(null);
-  const [isRunningPrecheck, setIsRunningPrecheck] = useState(false);
-  const [troubleshootingResult, setTroubleshootingResult] = useState<TroubleshootingResult | null>(null);
-  const [precheckIssueInput, setPrecheckIssueInput] = useState('');
   const [uiNotice, setUiNotice] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
     title: '',
@@ -81,18 +56,11 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   React.useEffect(() => {
     const fetch = async () => {
       const [svcRes, bdRes] = await Promise.all([
-        supabase.from('services').select('title, price, description, features').order('id'),
+        supabase.from('services').select('title, price').order('id'),
         supabase.from('blocked_dates').select('date'),
       ]);
       if (svcRes.data) {
-        setServices(
-          svcRes.data.map((s: any) => ({
-            title: s.title,
-            price: s.price || '',
-            description: s.description || '',
-            features: Array.isArray(s.features) ? s.features : [],
-          }))
-        );
+        setServices(svcRes.data.map((s: any) => ({ title: s.title, price: s.price || '' })));
       } else if (svcRes.error) {
         console.error('Error fetching services:', svcRes.error);
       }
@@ -113,8 +81,6 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
     const { name, value } = e.target;
     if (name === 'service') {
       const matched = services.find(s => s.title === value);
-      setServiceExplainResult(null);
-      setTroubleshootingResult(null);
       setBookingData({
         ...bookingData,
         service: value,
@@ -306,134 +272,6 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
       date: slot.date,
       time: slot.time,
     }));
-  };
-
-  const handleExplainService = async () => {
-    if (!bookingData.service) {
-      setUiNotice({ isOpen: true, title: 'Notice', message: 'Please select a service first.' });
-      return;
-    }
-
-    const selected = services.find((s) => s.title === bookingData.service);
-    setIsExplainingService(true);
-    try {
-      const res = await fetch('/api/ai-insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'service-explain',
-          payload: {
-            service: bookingData.service,
-            serviceDescription: selected?.description || '',
-            serviceFeatures: selected?.features || [],
-            userIssue: bookingData.description || precheckIssueInput || '',
-            extraServices: bookingData.extraServices || '',
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Service explanation endpoint unavailable');
-      }
-
-      const json = await res.json();
-      const result = json?.result;
-      if (!result?.plainExplanation || !Array.isArray(result?.whatToExpect) || !Array.isArray(result?.prepChecklist)) {
-        throw new Error('Invalid response shape');
-      }
-
-      setServiceExplainResult({
-        plainExplanation: String(result.plainExplanation),
-        whatToExpect: result.whatToExpect.map((item: any) => String(item)).slice(0, 4),
-        prepChecklist: result.prepChecklist.map((item: any) => String(item)).slice(0, 6),
-      });
-    } catch (error) {
-      console.warn('Service explanation fallback used:', error);
-      setServiceExplainResult({
-        plainExplanation: `The ${bookingData.service} service helps identify and fix your issue with guided diagnosis and professional support tailored to your setup.`,
-        whatToExpect: [
-          'A quick initial assessment of your reported issue.',
-          'Hands-on troubleshooting and fix recommendations.',
-          'A summary of what was done and suggested next steps.',
-        ],
-        prepChecklist: [
-          'Keep your device charged and connected to the internet.',
-          'Write down the error message or behavior you are seeing.',
-          'Have login credentials available if system access is needed.',
-        ],
-      });
-    } finally {
-      setIsExplainingService(false);
-    }
-  };
-
-  const handleRunTroubleshootingPrecheck = async () => {
-    const issue = (precheckIssueInput || bookingData.description || '').trim();
-    if (!bookingData.service) {
-      setUiNotice({ isOpen: true, title: 'Notice', message: 'Please select a service first before running pre-check.' });
-      return;
-    }
-
-    if (!issue) {
-      setUiNotice({ isOpen: true, title: 'Notice', message: 'Please describe the issue so AI can run a guided pre-check.' });
-      return;
-    }
-
-    setIsRunningPrecheck(true);
-    try {
-      const res = await fetch('/api/ai-insights', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'troubleshooting-precheck',
-          payload: {
-            service: bookingData.service,
-            issue,
-            extraServices: bookingData.extraServices || '',
-            selectedDate: bookingData.date || '',
-            selectedTime: bookingData.time || '',
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Troubleshooting endpoint unavailable');
-      }
-
-      const json = await res.json();
-      const result = json?.result;
-      if (!Array.isArray(result?.likelyCauses) || !Array.isArray(result?.guidedSteps) || !result?.summary) {
-        throw new Error('Invalid troubleshooting response');
-      }
-
-      setTroubleshootingResult({
-        likelyCauses: result.likelyCauses.map((item: any) => String(item)).slice(0, 4),
-        guidedSteps: result.guidedSteps
-          .map((row: any) => ({ step: String(row?.step || ''), why: String(row?.why || '') }))
-          .filter((row: any) => row.step)
-          .slice(0, 6),
-        bookNowRecommendation: result.bookNowRecommendation === 'no' || result.bookNowRecommendation === 'monitor' ? result.bookNowRecommendation : 'yes',
-        summary: String(result.summary),
-      });
-    } catch (error) {
-      console.warn('Troubleshooting fallback used:', error);
-      setTroubleshootingResult({
-        likelyCauses: [
-          'A temporary configuration mismatch.',
-          'Outdated software or missing updates.',
-          'Unstable connectivity or service dependency issue.',
-        ],
-        guidedSteps: [
-          { step: 'Restart the affected device and router.', why: 'Clears temporary service and memory issues.' },
-          { step: 'Check that all cables and power sources are secure.', why: 'Loose connections often create intermittent failures.' },
-          { step: 'Update the application or operating system.', why: 'Many bugs are resolved in current releases.' },
-        ],
-        bookNowRecommendation: 'monitor',
-        summary: 'Basic checks can resolve minor issues. If the problem persists after these steps, proceed with booking so a technician can diagnose it in detail.',
-      });
-    } finally {
-      setIsRunningPrecheck(false);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -844,43 +682,6 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                   </div>
                 )}
 
-                <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-sm font-semibold text-indigo-900">Explain My Service</p>
-                    <button
-                      type="button"
-                      onClick={handleExplainService}
-                      disabled={isExplainingService}
-                      className="px-3 py-2 rounded text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white"
-                    >
-                      {isExplainingService ? 'Explaining...' : 'Explain with AI'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-indigo-700">Get a plain-language explanation of this service based on your issue.</p>
-
-                  {serviceExplainResult && (
-                    <div className="mt-3 rounded-lg bg-white border border-indigo-100 p-3 space-y-3">
-                      <p className="text-sm text-slate-700">{serviceExplainResult.plainExplanation}</p>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-900 mb-1">What to expect</p>
-                        <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
-                          {serviceExplainResult.whatToExpect.map((item, idx) => (
-                            <li key={`expect-${idx}`}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-900 mb-1">Prep checklist</p>
-                        <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
-                          {serviceExplainResult.prepChecklist.map((item, idx) => (
-                            <li key={`prep-${idx}`}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Extra Services Required */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3">Extra Services Required</label>
@@ -1035,67 +836,6 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                     placeholder="Describe the issue or problem you need help with..."
                     className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 outline-none focus:border-blue-500 resize-none"
                   />
-                </div>
-
-                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-sm font-semibold text-emerald-900">AI Troubleshooting Pre-check</p>
-                    <button
-                      type="button"
-                      onClick={handleRunTroubleshootingPrecheck}
-                      disabled={isRunningPrecheck}
-                      className="px-3 py-2 rounded text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white"
-                    >
-                      {isRunningPrecheck ? 'Running...' : 'Run Pre-check'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-emerald-700 mb-3">Try guided checks first. You may solve minor issues instantly.</p>
-                  <textarea
-                    value={precheckIssueInput}
-                    onChange={(e) => setPrecheckIssueInput(e.target.value)}
-                    rows={3}
-                    placeholder="Briefly describe what is happening, any error messages, and when it started..."
-                    className="w-full border border-emerald-200 rounded-lg px-4 py-3 text-gray-700 outline-none focus:border-emerald-500 resize-none bg-white"
-                  />
-
-                  {troubleshootingResult && (
-                    <div className="mt-3 rounded-lg bg-white border border-emerald-100 p-3 space-y-3">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-900 mb-1">Likely causes</p>
-                        <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
-                          {troubleshootingResult.likelyCauses.map((cause, idx) => (
-                            <li key={`cause-${idx}`}>{cause}</li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div>
-                        <p className="text-xs font-semibold text-slate-900 mb-1">Guided checks</p>
-                        <ol className="list-decimal pl-5 text-xs text-slate-700 space-y-2">
-                          {troubleshootingResult.guidedSteps.map((row, idx) => (
-                            <li key={`step-${idx}`}>
-                              <span className="font-semibold">{row.step}</span>
-                              <span className="block text-slate-500">{row.why}</span>
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-
-                      <div className="rounded-md px-3 py-2 bg-slate-50 border border-slate-200">
-                        <p className="text-xs text-slate-600">
-                          Recommendation:{' '}
-                          <span className="font-semibold text-slate-900">
-                            {troubleshootingResult.bookNowRecommendation === 'yes'
-                              ? 'Book now for expert support.'
-                              : troubleshootingResult.bookNowRecommendation === 'no'
-                              ? 'You may not need to book yet if issue is resolved.'
-                              : 'Monitor after these checks, then book if issue persists.'}
-                          </span>
-                        </p>
-                        <p className="text-xs text-slate-600 mt-1">{troubleshootingResult.summary}</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

@@ -4,12 +4,16 @@ import React, { useState } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import Image from 'next/image';
 import SlickTechLogo from '@/app/Assets/SlickTech_Logo.png';
+import PhoneInputWithCountry from '@/app/components/PhoneInputWithCountry';
 
 import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaUser, FaLock, FaPhone, FaMapMarkerAlt } from 'react-icons/fa';
 
 interface SignupScreenProps {
   onToggle: () => void;
 }
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MOBILE_REGEX = /^\+?[1-9]\d{7,14}$/;
 
 const SignupScreen = ({ onToggle }: SignupScreenProps) => {
   // --- Expanded State ---
@@ -29,7 +33,9 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
 
   // Helper to handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    setFormData({ ...formData, [name]: value });
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -43,16 +49,30 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       return;
     }
 
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
+      setLoading(false);
+      return;
+    }
+
+    const normalizedPhone = formData.phone.trim();
+    if (!MOBILE_REGEX.test(normalizedPhone)) {
+      setError('Please enter a valid mobile number (for example: +263771234567).');
+      setLoading(false);
+      return;
+    }
+
     try {
       // Create user in Supabase auth (this will be stored in the authentication system)
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
+        email: normalizedEmail,
         password: formData.password,
         options: {
           data: {
             first_name: formData.firstName,
             surname: formData.surname,
-            phone: formData.phone,
+            phone: normalizedPhone,
             location: formData.location,
           },
         },
@@ -74,9 +94,9 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
           id: userId,
           first_name: formData.firstName,
           surname: formData.surname,
-          phone: formData.phone,
+          phone: normalizedPhone,
           location: formData.location,
-          email: formData.email,
+          email: normalizedEmail,
         })
         .select()
         .single();
@@ -214,7 +234,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
                   <FaEnvelope />
                 </div>
-                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
+                <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$" title="Enter a valid email address" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
             </div>
 
@@ -226,16 +246,25 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
                     <FaPhone />
                   </div>
-                  <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="+123..." className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
+                  <div className="pl-12 pr-3 py-2">
+                    <PhoneInputWithCountry
+                      value={formData.phone}
+                      onChange={(phoneValue) => setFormData((prev) => ({ ...prev, phone: phoneValue }))}
+                      required
+                      className="items-center"
+                      selectClassName="w-44 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      inputClassName="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="flex-1 group">
-                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Location</label>
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Address / Location</label>
                 <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
                     <FaMapMarkerAlt />
                   </div>
-                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="City, Country" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
+                  <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="Street address, area, city" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
               </div>
             </div>

@@ -1,3 +1,15 @@
+-- Add image_url column to services for uploaded images (separate from gradient)
+ALTER TABLE services ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Create storage bucket for service images (run in Supabase dashboard or via SQL editor)
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('service-images', 'service-images', true)
+--   ON CONFLICT (id) DO NOTHING;
+
+-- Storage policy: public read, admin write
+-- CREATE POLICY "Public read service images" ON storage.objects FOR SELECT USING (bucket_id = 'service-images');
+-- CREATE POLICY "Admins manage service images" ON storage.objects FOR ALL
+--   USING (bucket_id = 'service-images' AND EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
 -- Add password_hash column for local authentication
 ALTER TABLE profiles ADD COLUMN password_hash TEXT;
 

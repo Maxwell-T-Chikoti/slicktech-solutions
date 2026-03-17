@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars } from 'react-icons/fa';
@@ -10,6 +10,7 @@ import html2canvas from 'html2canvas';
 import { downloadInvoicePDF } from '@/app/lib/pdfUtils';
 import SlickTechLogo from '../Assets/SlickTech_Logo.png';
 import { useTheme } from '../components/ThemeProvider';
+import PhoneInputWithCountry from '@/app/components/PhoneInputWithCountry';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -26,7 +27,32 @@ interface BookingWithProfile {
   user_id: string;
   user_email?: string;
   user_name?: string;
+  user_location?: string;
+  assigned_staff_id?: string | null;
+  staff_name?: string;
+  staff_acknowledged_at?: string | null;
+  staff_notes?: string | null;
+  staff_completion_report?: string | null;
+  staff_completed_at?: string | null;
 }
+
+type StaffMember = {
+  id: string;
+  first_name: string;
+  surname: string;
+  email: string;
+};
+
+type ManagedStaffAccount = {
+  id: string;
+  first_name: string;
+  surname: string;
+  email: string;
+  phone?: string;
+  location?: string;
+  isDisabled: boolean;
+  bannedUntil?: string | null;
+};
 
 const AI_DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -60,13 +86,29 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newBookingAlert, setNewBookingAlert] = useState<BookingWithProfile | null>(null);
   const [selectedBookings, setSelectedBookings] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'activity' | 'settings' | 'services'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'staff' | 'activity' | 'settings' | 'services'>('dashboard');
   const [customers, setCustomers] = useState<any[]>([]);
+  const [managedStaff, setManagedStaff] = useState<ManagedStaffAccount[]>([]);
+  const [loadingManagedStaff, setLoadingManagedStaff] = useState(false);
+  const [staffActionInProgressId, setStaffActionInProgressId] = useState<string | null>(null);
+  const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({});
   const [activityLog, setActivityLog] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [staffToAssign, setStaffToAssign] = useState('');
+  const [assigningStaff, setAssigningStaff] = useState(false);
+  const [creatingStaff, setCreatingStaff] = useState(false);
+  const [newStaffForm, setNewStaffForm] = useState({
+    firstName: '',
+    surname: '',
+    email: '',
+    password: '',
+    phone: '',
+    location: '',
+  });
   const [metrics, setMetrics] = useState({
     totalBookings: 0,
     pendingBookings: 0,
@@ -96,6 +138,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newFeatureInput, setNewFeatureInput] = useState<string>('');
   const [newServiceGradient, setNewServiceGradient] = useState<string>('linear-gradient(135deg, #60a5fa, #2563eb)');
   const [editingService, setEditingService] = useState<any | null>(null);
+  const [newServiceImageFile, setNewServiceImageFile] = useState<File | null>(null);
+  const [newServiceImagePreview, setNewServiceImagePreview] = useState<string>('');
+  const serviceImageInputRef = useRef<HTMLInputElement>(null);
   // customer messaging
   const [customMessage, setCustomMessage] = useState<string>('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -235,6 +280,234 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
   };
 
+  const fetchStaffMembers = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, first_name, surname, email')
+      .eq('role', 'staff')
+      .order('first_name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching staff members:', error);
+      return;
+    }
+
+    setStaffMembers((data || []) as StaffMember[]);
+  };
+
+  const getAdminAccessToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new Error('Missing active session token. Please sign in again.');
+    }
+
+    return session.access_token;
+  };
+
+  const fetchManagedStaff = async () => {
+    setLoadingManagedStaff(true);
+    try {
+      const token = await getAdminAccessToken();
+      const res = await fetch('/api/admin/staff-management', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to fetch staff accounts.');
+      }
+
+      setManagedStaff((json?.staff || []) as ManagedStaffAccount[]);
+    } catch (error: any) {
+      addNotification(error?.message || 'Could not load staff accounts.', 'error');
+    } finally {
+      setLoadingManagedStaff(false);
+    }
+  };
+
+  const updateStaffAccount = async (
+    staff: ManagedStaffAccount,
+    action: 'disable' | 'enable' | 'reset-password'
+  ) => {
+    const draftPassword = (staffPasswordDrafts[staff.id] || '').trim();
+    if (action === 'reset-password' && draftPassword.length < 8) {
+      showAlertDialog('Please enter a new password with at least 8 characters.', 'Invalid password');
+      return;
+    }
+
+    setStaffActionInProgressId(staff.id);
+    try {
+      const token = await getAdminAccessToken();
+      const res = await fetch('/api/admin/staff-management', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          staffId: staff.id,
+          action,
+          newPassword: action === 'reset-password' ? draftPassword : undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to update staff account.');
+      }
+
+      if (action === 'reset-password') {
+        setStaffPasswordDrafts((prev) => ({ ...prev, [staff.id]: '' }));
+      }
+
+      addNotification(
+        action === 'disable'
+          ? `Disabled ${staff.first_name} ${staff.surname}`
+          : action === 'enable'
+          ? `Enabled ${staff.first_name} ${staff.surname}`
+          : `Password reset for ${staff.first_name} ${staff.surname}`,
+        'success'
+      );
+      logActivity(
+        action === 'disable'
+          ? `Disabled staff account ${staff.email}`
+          : action === 'enable'
+          ? `Enabled staff account ${staff.email}`
+          : `Reset password for staff account ${staff.email}`
+      );
+      fetchManagedStaff();
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not update staff account.', 'Staff action failed');
+    } finally {
+      setStaffActionInProgressId(null);
+    }
+  };
+
+  const deleteStaffAccount = async (staff: ManagedStaffAccount) => {
+    showConfirmDialog(
+      `Delete staff account for ${staff.first_name} ${staff.surname}? This action cannot be undone.`,
+      async () => {
+        setStaffActionInProgressId(staff.id);
+        try {
+          const token = await getAdminAccessToken();
+          const res = await fetch(`/api/admin/staff-management?staffId=${encodeURIComponent(staff.id)}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const json = await res.json();
+          if (!res.ok) {
+            throw new Error(json?.error || 'Failed to delete staff account.');
+          }
+
+          addNotification(`Deleted staff account ${staff.email}`, 'success');
+          logActivity(`Deleted staff account ${staff.email}`);
+          fetchManagedStaff();
+          fetchStaffMembers();
+          fetchBookingsWithProfiles();
+        } catch (error: any) {
+          showAlertDialog(error?.message || 'Could not delete staff account.', 'Delete failed');
+        } finally {
+          setStaffActionInProgressId(null);
+        }
+      },
+      'Delete staff account',
+      'Delete account'
+    );
+  };
+
+  const createStaffMember = async () => {
+    const firstName = newStaffForm.firstName.trim();
+    const surname = newStaffForm.surname.trim();
+    const email = newStaffForm.email.trim().toLowerCase();
+    const password = newStaffForm.password;
+
+    if (!firstName || !surname || !email || !password) {
+      showAlertDialog('Please fill in first name, surname, email, and password.', 'Missing information');
+      return;
+    }
+
+    setCreatingStaff(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('Missing active session token. Please sign in again.');
+      }
+
+      const res = await fetch('/api/admin/create-staff', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(newStaffForm),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'Failed to create staff account.');
+      }
+
+      setNewStaffForm({
+        firstName: '',
+        surname: '',
+        email: '',
+        password: '',
+        phone: '',
+        location: '',
+      });
+      addNotification(`Staff account created for ${json?.email || email}`, 'success');
+      logActivity(`Created staff account ${json?.email || email}`);
+      fetchStaffMembers();
+      fetchManagedStaff();
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not create staff account.', 'Create staff failed');
+    } finally {
+      setCreatingStaff(false);
+    }
+  };
+
+  const assignStaffToBooking = async () => {
+    if (!selectedBooking) return;
+
+    setAssigningStaff(true);
+    try {
+      const assignId = staffToAssign || null;
+      const { error } = await supabase
+        .from('bookings')
+        .update({ assigned_staff_id: assignId })
+        .eq('id', selectedBooking.id);
+
+      if (error) {
+        throw error;
+      }
+
+      const selectedStaff = staffMembers.find((s) => s.id === staffToAssign);
+      addNotification(
+        selectedStaff
+          ? `Assigned booking #${selectedBooking.id} to ${selectedStaff.first_name} ${selectedStaff.surname}`
+          : `Removed staff assignment for booking #${selectedBooking.id}`,
+        'success'
+      );
+      fetchBookingsWithProfiles();
+      setSelectedBooking((prev) => (prev ? { ...prev, assigned_staff_id: assignId } : prev));
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Failed to assign staff to booking.', 'Assignment failed');
+    } finally {
+      setAssigningStaff(false);
+    }
+  };
+
   const fetchBookingsWithProfiles = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -256,7 +529,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         data.map(async (booking: any) => {
           const { data: profileData } = await supabase
             .from('profiles')
-            .select('email, first_name, surname')
+            .select('email, first_name, surname, location')
             .eq('id', booking.user_id)
             .single();
 
@@ -267,11 +540,25 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             .eq('title', booking.service)
             .single();
 
+          let staffName = '';
+          if (booking.assigned_staff_id) {
+            const { data: staffProfile } = await supabase
+              .from('profiles')
+              .select('first_name, surname')
+              .eq('id', booking.assigned_staff_id)
+              .single();
+            if (staffProfile) {
+              staffName = `${staffProfile.first_name} ${staffProfile.surname}`;
+            }
+          }
+
           return {
             ...booking,
             user_email: profileData?.email,
             user_name: profileData ? `${profileData.first_name} ${profileData.surname}` : 'Unknown User',
+            user_location: profileData?.location || booking.location || '',
             service_price: serviceData?.price || booking.price,
+            staff_name: staffName,
           };
         })
       );
@@ -385,6 +672,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchCustomers();
       fetchServices();
       fetchBlockedDates();
+      fetchStaffMembers();
+      fetchManagedStaff();
       logActivity('Admin logged in');
 
       // Set up real-time subscription for new bookings
@@ -630,17 +919,40 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
 
     try {
+      // Upload image if one was selected
+      let imageUrl: string | undefined = editingService?.image_url ?? undefined;
+      if (newServiceImageFile) {
+        const ext = newServiceImageFile.name.split('.').pop() ?? 'jpg';
+        const path = `services/${Date.now()}.${ext}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('service-images')
+          .upload(path, newServiceImageFile, { upsert: true });
+        if (uploadError) {
+          // Surface storage errors clearly (bucket may not exist yet)
+          const storageMsg: string = uploadError.message || JSON.stringify(uploadError);
+          addNotification(`Image upload failed: ${storageMsg}. Service will be saved without image.`, 'warning');
+          imageUrl = editingService?.image_url ?? undefined;
+        } else {
+          const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(uploadData.path);
+          imageUrl = urlData.publicUrl;
+        }
+      }
+
+      // Build payload — only include image_url when it has a value so missing DB column doesn't error
+      const servicePayload: Record<string, unknown> = {
+        title: newServiceTitle.trim(),
+        price: newServicePrice.trim(),
+        description: newServiceDescription.trim(),
+        features: newServiceFeatures,
+        image: newServiceGradient,
+      };
+      if (imageUrl !== undefined) servicePayload.image_url = imageUrl;
+
       if (editingService) {
         // update existing
         const { error } = await supabase
           .from('services')
-          .update({
-            title: newServiceTitle.trim(),
-            price: newServicePrice.trim(),
-            description: newServiceDescription.trim(),
-            features: newServiceFeatures,
-            image: newServiceGradient,
-          })
+          .update(servicePayload)
           .eq('id', editingService.id);
         if (error) throw error;
         addNotification(`Service "${newServiceTitle}" updated`, 'success');
@@ -648,13 +960,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       } else {
         const { error } = await supabase
           .from('services')
-          .insert([{
-            title: newServiceTitle.trim(),
-            price: newServicePrice.trim(),
-            description: newServiceDescription.trim(),
-            features: newServiceFeatures,
-            image: newServiceGradient,
-          }]);
+          .insert([servicePayload]);
         if (error) throw error;
         addNotification(`Service "${newServiceTitle}" added`, 'success');
         logActivity(`Added service ${newServiceTitle}`);
@@ -665,19 +971,28 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       setNewServiceFeatures([]);
       setNewFeatureInput('');
       setNewServiceGradient('linear-gradient(135deg, #60a5fa, #2563eb)');
+      setNewServiceImageFile(null);
+      setNewServiceImagePreview('');
       setEditingService(null);
       fetchServices();
     } catch (err) {
       // Supabase PostgrestError has non-enumerable props — extract them explicitly
       const pgErr = err as any;
-      const msg: string = pgErr?.message ?? pgErr?.msg ?? String(err);
+      const msg: string =
+        pgErr?.message ||
+        pgErr?.msg ||
+        (err instanceof Error ? err.message : '') ||
+        (() => { try { return JSON.stringify(err); } catch { return String(err); } })();
       const code: string = pgErr?.code ?? '';
       const details: string = pgErr?.details ?? '';
       const hint: string = pgErr?.hint ?? '';
-      console.error('Error adding/updating service:', { message: msg, code, details, hint });
+      console.error('Error adding/updating service:', msg, { code, details, hint });
       const isRls = msg.toLowerCase().includes('row-level security') || code === '42501';
+      const isMissingCol = msg.toLowerCase().includes('column') && msg.toLowerCase().includes('does not exist');
       if (isRls) {
         addNotification('Permission denied: RLS policy blocked the action. Ensure your admin account has the correct role.', 'error');
+      } else if (isMissingCol) {
+        addNotification('Database column missing. Run the latest migration (ALTER TABLE services ADD COLUMN image_url TEXT) in Supabase.', 'error');
       } else {
         addNotification(`Failed to save service: ${msg || 'Unknown error'}`, 'error');
       }
@@ -722,7 +1037,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const fetchCustomers = async () => {
     try {
       const [{ data: profiles }, { data: servicesData }] = await Promise.all([
-        supabase.from('profiles').select('*'),
+        supabase.from('profiles').select('*').eq('role', 'user'),
         supabase.from('services').select('title, price'),
       ]);
 
@@ -942,6 +1257,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     fetchAIDemandForecast();
   }, [bookings, metrics.dayOfWeekCounts, aiDemandInsights.busiestDay, aiDemandInsights.lowDemandDay]);
+
+  useEffect(() => {
+    if (!selectedBooking) {
+      setStaffToAssign('');
+      return;
+    }
+    setStaffToAssign(selectedBooking.assigned_staff_id || '');
+  }, [selectedBooking]);
 
   const forecastRowsForDisplay = aiDemandForecast && aiDemandForecast.length > 0
     ? aiDemandForecast
@@ -1616,6 +1939,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 {[
                   { id: 'dashboard', label: 'Dashboard', icon: FaChartBar },
                   { id: 'customers', label: 'Customers', icon: FaUser },
+                  { id: 'staff', label: 'Staff', icon: FaUsers },
                   { id: 'activity', label: 'Activity Log', icon: FaHistory },
                   { id: 'services', label: 'Services', icon: FaFilter },
                 ].map((tab) => (
@@ -1642,6 +1966,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   <span>
                     {activeTab === 'dashboard' && 'Dashboard'}
                     {activeTab === 'customers' && 'Customers'}
+                    {activeTab === 'staff' && 'Staff'}
                     {activeTab === 'activity' && 'Activity Log'}
                     {activeTab === 'services' && 'Services'}
                   </span>
@@ -1652,6 +1977,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     {[
                       { id: 'dashboard', label: 'Dashboard' },
                       { id: 'customers', label: 'Customers' },
+                      { id: 'staff', label: 'Staff' },
                       { id: 'activity', label: 'Activity Log' },
                       { id: 'services', label: 'Services' },
                     ].map((tab) => (
@@ -2154,6 +2480,172 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               </div>
             )}
 
+            {activeTab === 'staff' && (
+              <div className="px-6 py-12">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">🧑‍🔧 Staff Management</h2>
+                  <button
+                    onClick={fetchManagedStaff}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    <FaSync /> Refresh Staff
+                  </button>
+                </div>
+
+                {loadingManagedStaff ? (
+                  <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">Loading staff accounts...</div>
+                ) : managedStaff.length === 0 ? (
+                  <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">No staff accounts found.</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {managedStaff.map((staff) => (
+                      <div key={staff.id} className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                        <div className="mb-4 flex items-center justify-between">
+                          <div>
+                            <h3 className="text-lg font-bold text-slate-900">{staff.first_name} {staff.surname}</h3>
+                            <p className="text-sm text-slate-600">{staff.email}</p>
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${staff.isDisabled ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {staff.isDisabled ? 'Disabled' : 'Enabled'}
+                          </span>
+                        </div>
+
+                        <div className="space-y-1 text-sm text-slate-600">
+                          <p>Phone: {staff.phone || 'Not provided'}</p>
+                          <p>Location: {staff.location || 'Not provided'}</p>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {staff.isDisabled ? (
+                            <button
+                              onClick={() =>
+                                showConfirmDialog(
+                                  `Enable ${staff.first_name} ${staff.surname}'s account?`,
+                                  () => updateStaffAccount(staff, 'enable'),
+                                  'Enable staff account',
+                                  'Enable account'
+                                )
+                              }
+                              disabled={staffActionInProgressId === staff.id}
+                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300"
+                            >
+                              Enable Account
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                showConfirmDialog(
+                                  `Disable ${staff.first_name} ${staff.surname}'s account?`,
+                                  () => updateStaffAccount(staff, 'disable'),
+                                  'Disable staff account',
+                                  'Disable account'
+                                )
+                              }
+                              disabled={staffActionInProgressId === staff.id}
+                              className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:bg-amber-300"
+                            >
+                              Disable Account
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => deleteStaffAccount(staff)}
+                            disabled={staffActionInProgressId === staff.id}
+                            className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-red-300"
+                          >
+                            Delete Staff
+                          </button>
+                        </div>
+
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Reset Password</p>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="password"
+                              placeholder="New password (min 8 chars)"
+                              value={staffPasswordDrafts[staff.id] || ''}
+                              onChange={(e) =>
+                                setStaffPasswordDrafts((prev) => ({
+                                  ...prev,
+                                  [staff.id]: e.target.value,
+                                }))
+                              }
+                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                              onClick={() => updateStaffAccount(staff, 'reset-password')}
+                              disabled={staffActionInProgressId === staff.id}
+                              className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-blue-300"
+                            >
+                              Update Password
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add Staff Member */}
+                <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-emerald-200">
+                  <h3 className="text-xl font-semibold mb-2 text-black">Add Staff Member</h3>
+                  <p className="text-sm text-slate-600 mb-4">Create a staff account so they can log in and see assigned jobs.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input
+                      type="text"
+                      placeholder="First name"
+                      value={newStaffForm.firstName}
+                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Surname"
+                      value={newStaffForm.surname}
+                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, surname: e.target.value }))}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Staff email"
+                      value={newStaffForm.email}
+                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, email: e.target.value }))}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Temporary password (min 8 chars)"
+                      value={newStaffForm.password}
+                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, password: e.target.value }))}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                    />
+                    <PhoneInputWithCountry
+                      value={newStaffForm.phone}
+                      onChange={(phoneValue) => setNewStaffForm((prev) => ({ ...prev, phone: phoneValue }))}
+                      placeholder="771234567"
+                      className="md:col-span-1"
+                      selectClassName="w-44 px-2 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      inputClassName="flex-1 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Location (optional)"
+                      value={newStaffForm.location}
+                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, location: e.target.value }))}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                    />
+                  </div>
+                  <button
+                    onClick={createStaffMember}
+                    disabled={creatingStaff}
+                    className="mt-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white px-6 py-2 rounded-lg font-semibold"
+                  >
+                    {creatingStaff ? 'Creating Staff...' : 'Create Staff Account'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'activity' && (
               <div className="px-6 py-12">
                 <h2 className="text-2xl font-bold text-slate-900 mb-8">📝 Activity Log</h2>
@@ -2297,6 +2789,48 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         <span className="text-sm text-gray-500">Preview</span>
                       </div>
                     </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Service Image <span className="font-normal text-gray-400">(optional — overrides gradient on card)</span></p>
+                      <div className="flex items-start gap-4">
+                          <input
+                            ref={serviceImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setNewServiceImageFile(file);
+                                setNewServiceImagePreview(URL.createObjectURL(file));
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => serviceImageInputRef.current?.click()}
+                            className="flex flex-col items-center justify-center w-36 h-24 border-2 border-dashed border-gray-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors bg-white text-center cursor-pointer"
+                          >
+                            <span className="text-2xl text-gray-400 mb-1">📷</span>
+                            <span className="text-xs text-gray-400 px-2">{newServiceImagePreview ? 'Change image' : 'Upload image'}</span>
+                          </button>
+                        {newServiceImagePreview && (
+                          <div className="relative">
+                            <img src={newServiceImagePreview} alt="Preview" className="w-36 h-24 object-cover rounded-xl border border-gray-200 shadow-sm" />
+                            <button
+                              type="button"
+                                onClick={() => {
+                                  setNewServiceImageFile(null);
+                                  setNewServiceImagePreview('');
+                                  if (serviceImageInputRef.current) serviceImageInputRef.current.value = '';
+                                }}
+                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold shadow"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div className="flex gap-4">
                       <button
                         onClick={addService}
@@ -2314,6 +2848,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             setNewServiceFeatures([]);
                             setNewFeatureInput('');
                             setNewServiceGradient('linear-gradient(135deg, #60a5fa, #2563eb)');
+                            setNewServiceImageFile(null);
+                            setNewServiceImagePreview('');
                           }}
                           className="bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold"
                         >
@@ -2332,7 +2868,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       {services.map((svc) => (
                         <li key={svc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
                           <div className="flex items-center gap-3">
-                            <div style={{ background: svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)' }} className="w-8 h-8 rounded-full flex-shrink-0" />
+                            {svc.image_url
+                              ? <img src={svc.image_url} alt={svc.title} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                              : <div style={{ background: svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)' }} className="w-8 h-8 rounded-full flex-shrink-0" />
+                            }
                             <div>
                               <span className="font-medium text-black">{svc.title} - {svc.price}</span>
                               <p className="text-xs text-slate-500 mt-1">
@@ -2352,6 +2891,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                                 setNewServiceFeatures(Array.isArray(svc.features) ? svc.features : []);
                                 setNewFeatureInput('');
                                 setNewServiceGradient(svc.image || 'linear-gradient(135deg, #60a5fa, #2563eb)');
+                                setNewServiceImageFile(null);
+                                setNewServiceImagePreview(svc.image_url || '');
                               }}
                               className="text-blue-600 hover:text-blue-800"
                               title="Edit"
@@ -2509,6 +3050,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <p className="text-sm">
                             <span className="font-semibold text-slate-900">User ID:</span> <span className="text-slate-700">{selectedBooking.user_id}</span>
                           </p>
+                          <p className="text-sm">
+                            <span className="font-semibold text-slate-900">Address:</span> <span className="text-slate-700">{selectedBooking.location || selectedBooking.user_location || 'Not provided'}</span>
+                          </p>
                         </div>
                       </div>
 
@@ -2565,6 +3109,62 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         </div>
                       </div>
 
+                      {/* Staff Assignment */}
+                      <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
+                        <h3 className="font-bold text-slate-900 mb-4">Assign Staff</h3>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                          <select
+                            value={staffToAssign}
+                            onChange={(e) => setStaffToAssign(e.target.value)}
+                            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                          >
+                            <option value="">Unassigned</option>
+                            {staffMembers.map((staff) => (
+                              <option key={staff.id} value={staff.id}>
+                                {staff.first_name} {staff.surname} ({staff.email})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={assignStaffToBooking}
+                            disabled={assigningStaff}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold"
+                          >
+                            {assigningStaff ? 'Saving...' : 'Save Assignment'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">
+                          Current: {selectedBooking.staff_name || 'No staff assigned'}
+                        </p>
+                        {(selectedBooking.staff_acknowledged_at || selectedBooking.staff_notes || selectedBooking.staff_completion_report) && (
+                          <div className="mt-4 space-y-3 rounded-xl bg-slate-50 border border-slate-200 p-4">
+                            <p className="text-sm font-semibold text-slate-900">Staff Progress</p>
+                            {selectedBooking.staff_acknowledged_at && (
+                              <p className="text-xs text-emerald-700">
+                                Acknowledged: {new Date(selectedBooking.staff_acknowledged_at).toLocaleString()}
+                              </p>
+                            )}
+                            {selectedBooking.staff_notes && (
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Staff Notes</p>
+                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedBooking.staff_notes}</p>
+                              </div>
+                            )}
+                            {selectedBooking.staff_completion_report && (
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Completion Report</p>
+                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{selectedBooking.staff_completion_report}</p>
+                                {selectedBooking.staff_completed_at && (
+                                  <p className="text-xs text-emerald-700 mt-2">
+                                    Completed: {new Date(selectedBooking.staff_completed_at).toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Actions */}
                       <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
                         <p className="text-sm font-semibold text-slate-900 mb-4">Update Booking Status</p>
@@ -2575,13 +3175,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 px-4 rounded-xl font-semibold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-green-300 hover:border-green-400 disabled:border-gray-300"
                           >
                             <FaCheck /> Confirm
-                          </button>
-                          <button
-                            onClick={() => updateBookingStatus(selectedBooking.id, 'Complete')}
-                            disabled={selectedBooking.status === 'Complete'}
-                            className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white py-3 px-4 rounded-xl font-semibold inline-flex items-center justify-center gap-2 transition-all backdrop-blur-md border border-blue-300 hover:border-blue-400 disabled:border-gray-300"
-                          >
-                            <FaCheck /> Complete
                           </button>
                           <button
                             onClick={() => updateBookingStatus(selectedBooking.id, 'Rejected')}

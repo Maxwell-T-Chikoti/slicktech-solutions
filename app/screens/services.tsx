@@ -18,6 +18,7 @@ interface Service {
   price: string;
   features?: string[];
   image?: string;
+  image_url?: string;
 }
 
 const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
@@ -162,8 +163,14 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((service, idx) => (
             <div key={service.id} className="bg-white border-2 border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm hover:shadow-md hover:border-blue-300 transition-all group">
-              <div className="h-48 flex items-center justify-center text-white text-center p-4 relative" style={{ background: service.image || fallbackGradients[idx % fallbackGradients.length] }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent"></div>
+              <div
+                className="h-48 flex items-center justify-center text-white text-center p-4 relative overflow-hidden"
+                style={service.image_url ? {} : { background: service.image || fallbackGradients[idx % fallbackGradients.length] }}
+              >
+                {service.image_url && (
+                  <img src={service.image_url} alt={service.title} className="absolute inset-0 w-full h-full object-cover" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-transparent"></div>
                 <div className="relative z-10">
                   {service.id !== 3 ? (
                     <span className="font-black text-2xl group-hover:scale-110 transition-transform duration-300 inline-block">{service.title}</span>

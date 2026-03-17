@@ -10,16 +10,19 @@ import { FaFacebookF, FaApple, FaGoogle, FaEnvelope, FaLock, FaEyeSlash, FaEye, 
 import SignupScreen from './signup';
 import UserDashboard from './dashboard';
 import AdminDashboard from './adminDashboard';
+import StaffDashboard from './staffDashboard';
 import ForgotPasswordScreen from './forgotPassword';
 import { FaUserShield } from 'react-icons/fa';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const LoginScreen = () => {
-  const INACTIVITY_TIMEOUT_MS = 1 * 60 * 1000;
+  const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
   const WARNING_WINDOW_MS = 30 * 1000;
 
   const [isSignup, setIsSignup] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<'user' | 'admin' | null>(null);
+  const [userRole, setUserRole] = useState<'user' | 'admin' | 'staff' | null>(null);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [showInactivityWarning, setShowInactivityWarning] = useState(false);
   const [countdownSeconds, setCountdownSeconds] = useState(30);
@@ -34,6 +37,10 @@ const LoginScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
+  const mapToAppRole = (dbRole: string | null | undefined): 'user' | 'admin' | 'staff' => {
+    return dbRole === 'admin' ? 'admin' : dbRole === 'staff' ? 'staff' : 'user';
+  };
+
   useEffect(() => {
     const restoreSession = async () => {
       const userSession = localStorage.getItem('slicktech_user');
@@ -41,7 +48,7 @@ const LoginScreen = () => {
         try {
           const user = JSON.parse(userSession);
           if (user.loggedIn) {
-            setUserRole(user.role === 'admin' ? 'admin' : 'user');
+            setUserRole(mapToAppRole(user.role));
             setIsLoggedIn(true);
             return;
           }
@@ -70,7 +77,7 @@ const LoginScreen = () => {
         return;
       }
 
-      setUserRole(profileData.role === 'admin' ? 'admin' : 'user');
+      setUserRole(mapToAppRole(profileData.role));
       setIsLoggedIn(true);
     };
 
@@ -82,10 +89,17 @@ const LoginScreen = () => {
     setLoading(true);
     setError(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(normalizedEmail)) {
+      setError('Please enter a valid email address.');
+      setLoading(false);
+      return;
+    }
+
     try {
       // Use Supabase auth to sign in
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -110,10 +124,10 @@ const LoginScreen = () => {
         return;
       }
 
-      const role = profileData.role === 'admin' ? 'admin' : 'user';
+      const role = mapToAppRole(profileData.role);
 
       // Create user session in localStorage
-      if (role === 'user') {
+      if (role === 'user' || role === 'staff') {
         const userSession = {
           id: profileData.id,
           email: profileData.email,
@@ -146,10 +160,17 @@ const LoginScreen = () => {
     localStorage.removeItem('slicktech_user');
     setUserRole(null);
     setIsLoggedIn(false);
+    setEmail('');
+    setPassword('');
+    setShowPassword(false);
+    setLoading(false);
+    setIsForgotPassword(false);
     setShowInactivityWarning(false);
     setCountdownSeconds(30);
     if (reason === 'inactivity') {
       setError('You were logged out due to inactivity. Please sign in again.');
+    } else {
+      setError(null);
     }
   }, []);
 
@@ -235,6 +256,15 @@ const LoginScreen = () => {
     );
   }
 
+  if (isLoggedIn && userRole === 'staff') {
+    return (
+      <>
+        <StaffDashboard onLogout={handleLogout} />
+        {renderInactivityWarning()}
+      </>
+    );
+  }
+
   if (isLoggedIn && userRole === 'user') {
     return (
       <>
@@ -307,6 +337,8 @@ const LoginScreen = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                  title="Enter a valid email address"
                   placeholder="Enter your email address" 
                   className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent"
                 />
@@ -338,11 +370,7 @@ const LoginScreen = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center cursor-pointer group">
-                <input type="checkbox" className="mr-3 accent-blue-600 scale-110" />
-                <span className="text-slate-600 group-hover:text-slate-800 transition-colors">Remember me</span>
-              </label>
+            <div className="flex items-center justify-end text-sm">
               <button 
                 type="button"
                 onClick={() => setIsForgotPassword(true)}

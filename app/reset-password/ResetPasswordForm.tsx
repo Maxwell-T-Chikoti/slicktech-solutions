@@ -25,12 +25,23 @@ const ResetPasswordForm = () => {
   useEffect(() => {
     const handlePasswordReset = async () => {
       try {
-        // Check if we have the reset token parameters
-        const accessToken = searchParams.get('access_token');
-        const refreshToken = searchParams.get('refresh_token');
-        const type = searchParams.get('type');
+        // Supabase recovery links may provide tokens in either query params or hash fragment.
+        const hashParams = typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.hash.replace(/^#/, ''))
+          : new URLSearchParams();
+
+        const accessToken = searchParams.get('access_token') || hashParams.get('access_token');
+        const refreshToken = searchParams.get('refresh_token') || hashParams.get('refresh_token');
+        const type = searchParams.get('type') || hashParams.get('type');
+        const hashError = hashParams.get('error_description') || hashParams.get('error');
 
         console.log('Reset password params:', { accessToken: !!accessToken, refreshToken: !!refreshToken, type });
+
+        if (hashError) {
+          setError('This reset link is invalid or has expired. Please request a new password reset.');
+          setVerifying(false);
+          return;
+        }
 
         if (accessToken && refreshToken && type === 'recovery') {
           // Set the session with the tokens from the URL
@@ -49,6 +60,9 @@ const ResetPasswordForm = () => {
           if (data.session) {
             console.log('Password reset session established successfully');
             setIsValidSession(true);
+            if (typeof window !== 'undefined' && window.location.hash) {
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
             setVerifying(false);
           } else {
             console.error('No session data returned');
