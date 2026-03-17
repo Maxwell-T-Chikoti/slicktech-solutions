@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 type RequestBody = {
-  type?: 'scheduling' | 'demand' | 'message-draft';
+  type?: 'scheduling' | 'demand' | 'message-draft' | 'service-explain';
   payload?: any;
 };
 
@@ -74,6 +74,21 @@ const makeMessageDraftPrompt = (payload: any) => {
   ].join('\n');
 };
 
+const makeServiceExplainPrompt = (payload: any) => {
+  return [
+    'You are a customer-facing technical service assistant.',
+    'Explain the selected service in simple language personalized to the customer issue.',
+    'Return STRICT JSON only with this shape:',
+    '{"plainExplanation":"...","whatToExpect":["..."],"prepChecklist":["..."]}.',
+    'Rules:',
+    '- plainExplanation must be 2-4 short sentences and avoid heavy jargon.',
+    '- whatToExpect must contain 2-4 concise bullet items.',
+    '- prepChecklist must contain 3-6 practical items.',
+    '- Do not promise exact outcomes or timelines.',
+    `Data: ${JSON.stringify(payload)}`,
+  ].join('\n');
+};
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GROQ_API_KEY;
@@ -92,6 +107,8 @@ export async function POST(req: NextRequest) {
       ? makeSchedulingPrompt(body.payload)
       : body.type === 'demand'
       ? makeDemandPrompt(body.payload)
+      : body.type === 'service-explain'
+      ? makeServiceExplainPrompt(body.payload)
       : makeMessageDraftPrompt(body.payload);
 
     const completionRes = await fetch(GROQ_URL, {

@@ -24,6 +24,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   Pending:   { label: 'Pending',   color: 'bg-yellow-100 text-yellow-700', icon: <FaHourglassHalf className="text-yellow-500" /> },
 };
 
+const formatPriceCAD = (rawPrice: string) => {
+  const numeric = parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
+  if (Number.isNaN(numeric)) return rawPrice || '';
+  return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(numeric);
+};
+
 const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [bookings, setLocalBookings] = useState<any[]>([]);
@@ -130,7 +136,7 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
             { label: 'Total Bookings', val: bookings.length,       color: 'text-blue-600',    bg: 'bg-blue-50',    border: 'border-blue-100' },
             { label: 'Upcoming',       val: upcoming.length,        color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
             { label: 'Completed',      val: certificates.length,   color: 'text-indigo-600',  bg: 'bg-indigo-50',  border: 'border-indigo-100' },
-            { label: 'Total Spent',    val: `R${totalSpent.toFixed(2)}`, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+            { label: 'Total Spent',    val: formatPriceCAD(String(totalSpent)), color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
           ].map((s, i) => (
             <div key={i} className={`bg-white border-2 ${s.border} p-5 rounded-2xl shadow-sm`}>
               <p className="text-xs font-black uppercase tracking-widest text-slate-400">{s.label}</p>
@@ -278,7 +284,7 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                               <span className="flex items-center gap-1"><FaCalendarAlt size={11} />{b.date}</span>
                               <span className="flex items-center gap-1"><FaClock size={11} />{b.time}</span>
                             </div>
-                            {b.price && <p className="text-sm font-black text-blue-600 mt-1">{b.price}</p>}
+                            {b.price && <p className="text-sm font-black text-blue-600 mt-1">{formatPriceCAD(b.price)}</p>}
                           </div>
                         </div>
                         <button
@@ -349,7 +355,7 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                                 <span>{b.date}</span>
                                 <span>·</span>
                                 <span>{b.time}</span>
-                                {b.price && <><span>·</span><span className="text-blue-600 font-bold">{b.price}</span></>}
+                                {b.price && <><span>·</span><span className="text-blue-600 font-bold">{formatPriceCAD(b.price)}</span></>}
                               </div>
                             </div>
                           </div>
@@ -403,7 +409,7 @@ const MyAccount = ({ onNavigate, onLogout, setBookings }: MyAccountProps) => {
                           </span>
                         </div>
                         <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                          {b.price && <p className="font-black text-blue-600">{b.price}</p>}
+                          {b.price && <p className="font-black text-blue-600">{formatPriceCAD(b.price)}</p>}
                           <div className="flex gap-2">
                             <button
                               onClick={() => downloadInvoicePDF({ ...b, user_name: `${user?.first_name ?? ''} ${user?.surname ?? ''}`.trim(), user_email: user?.email })}

@@ -47,6 +47,10 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
   const [overallRating, setOverallRating] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  const formatCAD = (value: number) => {
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(value || 0);
+  };
+
   useEffect(() => {
     const fetchAnalytics = async () => {
       setLoading(true);
@@ -230,14 +234,14 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                     <Tooltip
                       contentStyle={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '2px solid rgba(0,0,0,0.2)', borderRadius: '8px', padding: '12px' }}
                       formatter={(value: any, name: any, item: any) => {
-                        if (name === 'revenue') return [`R${value.toFixed(2)}`, 'Revenue'];
+                        if (name === 'revenue') return [formatCAD(value), 'Revenue'];
                         const ratingInfo = item?.payload?.reviewCount ? ` · ★ ${item.payload.avgRating.toFixed(1)} (${item.payload.reviewCount})` : '';
                         return [`${value}${ratingInfo}`, 'Bookings'];
                       }}
                     />
                     <Legend wrapperStyle={{ paddingTop: '10px' }} />
                     <Bar dataKey="bookings" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Bookings" />
-                    <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} name="Revenue (R)" />
+                    <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} name="Revenue (CAD)" />
                   </BarChart>
                 ) : chartType === 'busiest-days' ? (
                   <BarChart data={dayOfWeekData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -284,7 +288,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                       stroke="rgba(0,0,0,0.6)"
                       tick={{ fontSize: 12 }}
                       label={{ 
-                        value: chartType === 'bookings' ? 'Number of Bookings' : 'Revenue ($)',
+                        value: chartType === 'bookings' ? 'Number of Bookings' : 'Revenue (CAD)',
                         angle: -90,
                         position: 'insideLeft'
                       }}
@@ -298,7 +302,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                       }}
                       formatter={(value: any) => {
                         if (chartType === 'revenue') {
-                          return [`$${value.toFixed(2)}`, 'Revenue'];
+                          return [formatCAD(value), 'Revenue'];
                         }
                         return [value, 'Bookings'];
                       }}
@@ -331,7 +335,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                       ? dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0)
                       : chartType === 'bookings'
                       ? data.reduce((sum, d) => sum + (d.bookings || 0), 0)
-                      : `R${data.reduce((sum, d) => sum + (d.revenue || 0), 0).toFixed(2)}`}
+                      : formatCAD(data.reduce((sum, d) => sum + (d.revenue || 0), 0))}
                   </p>
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
@@ -345,7 +349,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                       ? (dayOfWeekData.reduce((sum, d) => sum + d.bookings, 0) / (dayOfWeekData.length || 1)).toFixed(1)
                       : chartType === 'bookings'
                       ? (data.reduce((sum, d) => sum + (d.bookings || 0), 0) / (data.length || 1)).toFixed(1)
-                      : `R${(data.reduce((sum, d) => sum + (d.revenue || 0), 0) / (data.length || 1)).toFixed(2)}`}
+                      : formatCAD(data.reduce((sum, d) => sum + (d.revenue || 0), 0) / (data.length || 1))}
                   </p>
                 </div>
                 <div className="backdrop-blur-lg bg-white/60 rounded-2xl p-6 border border-gray-200">
@@ -363,7 +367,7 @@ const AnalyticsScreen = ({ onBack, chartType }: AnalyticsScreenProps) => {
                         })()
                       : chartType === 'bookings'
                       ? Math.max(...data.map(d => d.bookings || 0))
-                      : `R${Math.max(...data.map(d => d.revenue || 0)).toFixed(2)}`}
+                      : formatCAD(Math.max(...data.map(d => d.revenue || 0)))}
                   </p>
                 </div>
               </div>

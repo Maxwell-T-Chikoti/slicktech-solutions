@@ -2693,7 +2693,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       />
                       <input
                         type="text"
-                        placeholder="Price (e.g. R500)"
+                        placeholder="Price (e.g. CAD$500)"
                         value={newServicePrice}
                         onChange={(e) => setNewServicePrice(e.target.value)}
                         className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"

@@ -25,6 +25,12 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const formatPriceCAD = (rawPrice: string) => {
+    const numeric = parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
+    if (Number.isNaN(numeric)) return rawPrice || '';
+    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(numeric);
+  };
+
   // Fallback gradients by index for services without a stored image
   const fallbackGradients = [
     'linear-gradient(135deg, #60a5fa, #2563eb)',
@@ -193,7 +199,7 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
                 </div>
                 
                 <div className="flex items-center justify-between">
-                  <p className="text-2xl font-black text-blue-600">{service.price}</p>
+                  <p className="text-2xl font-black text-blue-600">{formatPriceCAD(service.price)}</p>
                   <button 
                     onClick={() => onNavigate('newbooking', service.title)}
                     className="bg-blue-600 hover:bg-slate-900 text-white text-sm font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-blue-200 hover:shadow-slate-400"
