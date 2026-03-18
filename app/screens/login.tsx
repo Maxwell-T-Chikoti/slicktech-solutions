@@ -35,6 +35,7 @@ const LoginScreen = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'email' | 'password', string>>>({});
   const [showPassword, setShowPassword] = useState(false);
 
   const mapToAppRole = (dbRole: string | null | undefined): 'user' | 'admin' | 'staff' => {
@@ -88,13 +89,27 @@ const LoginScreen = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const nextErrors: Partial<Record<'email' | 'password', string>> = {};
 
     const normalizedEmail = email.trim().toLowerCase();
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      setError('Please enter a valid email address.');
+    if (!normalizedEmail) {
+      nextErrors.email = 'Email is required.';
+    } else if (!EMAIL_REGEX.test(normalizedEmail)) {
+      nextErrors.email = 'Please enter a valid email address.';
+    }
+
+    if (!password) {
+      nextErrors.password = 'Password is required.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setError('Please correct the highlighted fields.');
       setLoading(false);
       return;
     }
+
+    setFieldErrors({});
 
     try {
       // Use Supabase auth to sign in
@@ -104,7 +119,14 @@ const LoginScreen = () => {
       });
 
       if (authError || !authData?.user) {
-        setError('Invalid email or password');
+        const authMsg = String(authError?.message || '').toLowerCase();
+        if (authMsg.includes('invalid login credentials')) {
+          setError('Incorrect email or password. Double-check your credentials and try again.');
+        } else if (authMsg.includes('email not confirmed')) {
+          setError('Please confirm your email address first, then sign in.');
+        } else {
+          setError(authError?.message || 'Unable to sign in right now. Please try again.');
+        }
         setLoading(false);
         return;
       }
@@ -119,7 +141,7 @@ const LoginScreen = () => {
         .single();
 
       if (profileError || !profileData) {
-        setError('Profile not found');
+        setError('Your profile could not be loaded. Please contact support if this keeps happening.');
         setLoading(false);
         return;
       }
@@ -150,7 +172,7 @@ const LoginScreen = () => {
       setLoading(false);
     } catch (err) {
       console.error('Login error:', err);
-      setError('Login failed. Please try again.');
+      setError('Login failed due to a temporary issue. Please retry in a moment.');
       setLoading(false);
     }
   };
@@ -336,13 +358,17 @@ const LoginScreen = () => {
                   type="email" 
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, email: '' }));
+                  }}
                   pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
                   title="Enter a valid email address"
                   placeholder="Enter your email address" 
                   className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent"
                 />
               </div>
+              {fieldErrors.email && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.email}</p>}
             </div>
 
             {/* Password Field */}
@@ -356,7 +382,10 @@ const LoginScreen = () => {
                   type={showPassword ? "text" : "password"} 
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, password: '' }));
+                  }}
                   placeholder="Enter your password" 
                   className="w-full pl-12 pr-12 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent"
                 />
@@ -368,6 +397,7 @@ const LoginScreen = () => {
                   {showPassword ? <FaEye /> : <FaEyeSlash />}
                 </button>
               </div>
+              {fieldErrors.password && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.password}</p>}
             </div>
 
             <div className="flex items-center justify-end text-sm">

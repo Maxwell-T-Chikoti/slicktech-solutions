@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { getRequestIp, writeAuditLog } from '@/app/lib/auditLogger';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -110,6 +111,24 @@ export async function POST(request: NextRequest) {
       to: userEmail,
       subject,
       html: htmlContent,
+    });
+
+    await writeAuditLog({
+      action: customMessage ? 'Admin sent custom booking message' : `Booking status notification sent: ${status}`,
+      category: 'message',
+      source: 'api:send-status-notification',
+      targetType: 'booking',
+      targetId: bookingId ?? null,
+      ipAddress: getRequestIp(request),
+      metadata: {
+        userEmail,
+        userName,
+        service,
+        date,
+        time,
+        status,
+        customMessage: customMessage || null,
+      },
     });
 
     return NextResponse.json({ success: true, messageId: (result as any).data?.id ?? null }, { status: 200 });

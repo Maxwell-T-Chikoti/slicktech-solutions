@@ -62,6 +62,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isExplainingService, setIsExplainingService] = useState(false);
   const [serviceExplainResult, setServiceExplainResult] = useState<ServiceExplainResult | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'service' | 'date' | 'description', string>>>({});
   const [uiNotice, setUiNotice] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
     title: '',
@@ -107,6 +108,9 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    if (name === 'service' || name === 'description') {
+      setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+    }
     if (name === 'service') {
       const matched = services.find(s => s.title === value);
       setServiceExplainResult(null);
@@ -124,6 +128,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   };
 
   const handleDateChange = (date: string) => {
+    setFieldErrors((prev) => ({ ...prev, date: '' }));
     setBookingData({
       ...bookingData,
       date: date
@@ -368,10 +373,24 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
       setUiNotice({ isOpen: true, title, message });
     };
 
-    if (!bookingData.service || !bookingData.date) {
-      showNotice('Please fill in all required fields');
+    const nextErrors: Partial<Record<'service' | 'date' | 'description', string>> = {};
+    if (!bookingData.service) {
+      nextErrors.service = 'Choose a service before continuing.';
+    }
+    if (!bookingData.date) {
+      nextErrors.date = 'Select an appointment date.';
+    }
+    if (!bookingData.description.trim()) {
+      nextErrors.description = 'Add a short description so the team can prepare.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      showNotice('Please fix the highlighted fields and try again.', 'Missing details');
       return;
     }
+
+    setFieldErrors({});
 
     setIsLoading(true);
 
@@ -401,7 +420,12 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         console.error('Error inserting booking:', error);
         console.error('Error as JSON:', JSON.stringify(error, null, 2));
         console.error('error details:', error);
-        showNotice('There was an error saving your booking. Please try again.');
+        const lowerMessage = String(error.message || '').toLowerCase();
+        if (lowerMessage.includes('permission') || lowerMessage.includes('row-level security')) {
+          showNotice('Your session may have expired. Please sign in again, then retry your booking.', 'Permission required');
+        } else {
+          showNotice(`We could not save your booking: ${error.message || 'Unknown error'}`, 'Booking failed');
+        }
       } else {
         console.log('Booking inserted:', data);
         const insertedBookingId = (data as any)?.[0]?.id || null;
@@ -444,17 +468,31 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
           }
         }
         
-        setBookingConfirmed(true);
-        // navigate to bookings page immediately so the new record is visible
-        onNavigate('bookings');
+        setUiNotice({
+          isOpen: true,
+          title: 'Booking Submitted',
+          message: 'Your appointment request was sent successfully. Redirecting to your bookings now.',
+        });
+        window.setTimeout(() => {
+          onNavigate('bookings');
+        }, 800);
       }
     } catch (err) {
       console.error('Unexpected error inserting booking:', err);
+      showNotice('Unexpected error while creating your booking. Please try again in a moment.', 'Booking failed');
     }
 
     setIsLoading(false);
-    setBookingConfirmed(true);
   };
+
+  const bookingStepLabels = ['Service', 'Date/Time', 'Details', 'Confirm'];
+  const bookingStepIndex = !bookingData.service
+    ? 0
+    : !bookingData.date || !bookingData.time
+    ? 1
+    : !bookingData.description.trim()
+    ? 2
+    : 3;
 
   if (loadingServices) {
     return (
@@ -730,6 +768,32 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
         <div className="max-w-6xl mx-auto">
           <h1 className="text-3xl font-bold text-slate-900 mb-8">New Booking</h1>
 
+          <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Booking Progress</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {bookingStepLabels.map((label, index) => {
+                const isComplete = index < bookingStepIndex;
+                const isCurrent = index === bookingStepIndex;
+                return (
+                  <div key={label} className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                        isComplete
+                          ? 'bg-emerald-600 text-white'
+                          : isCurrent
+                          ? 'bg-blue-700 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className={`text-xs font-semibold ${isCurrent ? 'text-blue-700' : 'text-slate-600'}`}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left Column - Service and Extra Services */}
@@ -741,7 +805,9 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                     name="service"
                     value={bookingData.service}
                     onChange={handleInputChange}
-                    className="w-full border border-gray-300 rounded-full px-4 py-3 text-gray-700 focus:outline-none focus:border-blue-500"
+                    className={`w-full border rounded-full px-4 py-3 text-gray-700 focus:outline-none focus:border-blue-500 ${
+                      fieldErrors.service ? 'border-red-400 bg-red-50/30' : 'border-gray-300'
+                    }`}
                   >
                     <option value="">Choose a service...</option>
                     {services.map((service) => (
@@ -750,6 +816,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.service && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.service}</p>}
                 </div>
 
                 {/* Service Options */}
@@ -944,6 +1011,7 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                         ))}
                       </select>
                     </div>
+                    {fieldErrors.date && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.date}</p>}
                   </div>
                 </div>
 
@@ -959,9 +1027,22 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                     onChange={handleInputChange}
                     rows={5}
                     placeholder="Describe the issue or problem you need help with..."
-                    className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-700 outline-none focus:border-blue-500 resize-none"
+                    className={`w-full border rounded-lg px-4 py-3 text-gray-700 outline-none focus:border-blue-500 resize-none ${
+                      fieldErrors.description ? 'border-red-400 bg-red-50/30' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors.description && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.description}</p>}
                 </div>
+              </div>
+            </div>
+
+            <div className="md:hidden sticky bottom-3 z-20">
+              <div className="rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Booking Summary</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{bookingData.service || 'No service selected yet'}</p>
+                <p className="text-xs text-slate-600">
+                  {bookingData.date || 'Pick a date'} at {bookingData.time || 'Pick a time'}
+                </p>
               </div>
             </div>
 

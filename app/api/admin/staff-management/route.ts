@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     const [{ data: profiles, error: profilesError }, { data: authUsersData, error: authUsersError }] = await Promise.all([
       supabaseAdmin
         .from('profiles')
-        .select('id, first_name, surname, email, phone, location, role')
+        .select('id, first_name, surname, email, phone, location, role, performance_reset_at')
         .order('first_name', { ascending: true }),
       supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
           phone: user?.user_metadata?.phone || '',
           location: user?.user_metadata?.location || '',
           role: 'staff',
+          performance_reset_at: null,
         });
       }
     });
@@ -157,7 +158,7 @@ export async function PATCH(req: NextRequest) {
 
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
-        .update({ first_name: firstName, surname })
+        .update({ first_name: firstName, surname, performance_reset_at: new Date().toISOString() })
         .eq('id', staffId);
 
       if (profileError) {
@@ -176,7 +177,20 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: authError.message || 'Updated profile name, but failed to sync auth metadata.' }, { status: 500 });
       }
 
-      return NextResponse.json({ success: true, action });
+      // Reassignment flow: remove current workload ownership so performance counters restart at zero.
+      const { data: clearedRows, error: clearAssignmentsError } = await supabaseAdmin
+        .from('bookings')
+        .update({ assigned_staff_id: null })
+        .eq('assigned_staff_id', staffId)
+        .select('id');
+
+      if (clearAssignmentsError) {
+        return NextResponse.json({ error: clearAssignmentsError.message || 'Name updated, but failed to reset staff assignment metrics.' }, { status: 500 });
+      }
+
+      const clearedAssignments = Array.isArray(clearedRows) ? clearedRows.length : 0;
+
+      return NextResponse.json({ success: true, action, metricsReset: true, clearedAssignments });
     }
 
     if (action === 'disable') {

@@ -9,8 +9,19 @@ import AnimatedSection from './components/AnimatedSection';
 import Counter from './components/Counter';
 import { FaArrowRight, FaCheckCircle, FaUsers, FaCalendarAlt, FaShieldAlt, FaLightbulb, FaRocket, FaStar } from 'react-icons/fa';
 
+type PublicReview = {
+  id: number;
+  service: string;
+  rating: number;
+  comment: string;
+  customerName: string;
+  created_at: string;
+};
+
 const HomePage = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [reviews, setReviews] = useState<PublicReview[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -19,6 +30,27 @@ const HomePage = () => {
 
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  useEffect(() => {
+    const fetchPublicReviews = async () => {
+      try {
+        const response = await fetch('/api/reviews/public');
+        if (!response.ok) {
+          throw new Error('Failed to load reviews');
+        }
+
+        const payload = await response.json();
+        setReviews(Array.isArray(payload?.reviews) ? payload.reviews : []);
+      } catch (error) {
+        console.warn('Could not load public reviews:', error);
+        setReviews([]);
+      } finally {
+        setLoadingReviews(false);
+      }
+    };
+
+    fetchPublicReviews();
   }, []);
 
   return (
@@ -76,8 +108,7 @@ const HomePage = () => {
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               <Link
                 href="/booking"
-                className="group bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-black px-8 py-4 rounded-lg font-bold text-lg transition-all duration-300 inline-flex items-center justify-center glass-effect shadow-lg hover:shadow-2xl hover:scale-105 hover:-translate-y-2 btn-interactive transform drop-shadow-lg"
-                style={{ textShadow: '0 2px 4px rgba(255,255,255,0.5)' }}
+                className="group inline-flex items-center justify-center rounded-lg bg-blue-600 px-8 py-4 text-lg font-bold text-white shadow-lg transition-all duration-300 hover:bg-indigo-600 hover:shadow-2xl hover:scale-105 hover:-translate-y-2"
               >
                 Get Started Now <FaArrowRight className="ml-2 group-hover:translate-x-2 transition-transform" />
               </Link>
@@ -261,6 +292,60 @@ const HomePage = () => {
               Start Your Journey Today <FaArrowRight className="group-hover:translate-x-2" />
             </Link>
           </AnimatedSection>
+        </div>
+      </section>
+
+      {/* Customer Reviews Section */}
+      <section className="py-24 bg-gradient-to-b from-slate-50 to-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <AnimatedSection>
+            <div className="text-center mb-14">
+              <span className="inline-block px-4 py-2 bg-amber-100 text-amber-700 rounded-full text-sm font-semibold mb-4">TRUSTED BY CUSTOMERS</span>
+              <h2 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4">
+                What Clients Say About <span className="gradient-text">SlickTech</span>
+              </h2>
+              <p className="text-lg text-slate-600 max-w-2xl mx-auto">Real feedback from customers who booked and completed services through our platform.</p>
+            </div>
+          </AnimatedSection>
+
+          {loadingReviews ? (
+            <div className="grid md:grid-cols-3 gap-6">
+              {[...Array(3)].map((_, idx) => (
+                <div key={idx} className="h-52 rounded-2xl bg-slate-100 animate-pulse" />
+              ))}
+            </div>
+          ) : reviews.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+              <p className="text-slate-700 font-semibold">No reviews posted yet.</p>
+              <p className="mt-2 text-slate-600">Book your first service and leave feedback after completion to help others choose with confidence.</p>
+              <Link
+                href="/booking"
+                className="mt-5 inline-flex items-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Book A Service
+              </Link>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {reviews.slice(0, 6).map((review, idx) => (
+                <AnimatedSection key={review.id} delay={idx * 80}>
+                  <div className="h-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-lg transition-all">
+                    <div className="flex items-center justify-between mb-4">
+                      <p className="font-semibold text-slate-900 truncate">{review.customerName}</p>
+                      <span className="text-xs text-slate-500">{new Date(review.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1 mb-3 text-amber-500">
+                      {[...Array(5)].map((_, starIdx) => (
+                        <FaStar key={starIdx} className={starIdx < review.rating ? 'opacity-100' : 'opacity-20'} />
+                      ))}
+                    </div>
+                    <p className="text-sm font-semibold text-blue-700 mb-2">{review.service}</p>
+                    <p className="text-slate-600 text-sm leading-relaxed">{review.comment || 'Customer left a star rating without a written comment.'}</p>
+                  </div>
+                </AnimatedSection>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

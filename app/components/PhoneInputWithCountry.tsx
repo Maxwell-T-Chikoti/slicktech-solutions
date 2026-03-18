@@ -15,6 +15,7 @@ type PhoneInputWithCountryProps = {
   required?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  maxDigits?: number;
   className?: string;
   selectClassName?: string;
   inputClassName?: string;
@@ -84,23 +85,23 @@ const loadCountries = async (): Promise<CountryOption[]> => {
 
 const normalizePhone = (value: string) => value.replace(/[^\d+]/g, '');
 
-const splitPhone = (value: string, countries: CountryOption[]) => {
+const splitPhone = (value: string, countries: CountryOption[], maxDigits: number) => {
   const normalized = normalizePhone(value || '');
 
   if (!normalized.startsWith('+')) {
-    return { dialCode: '+1', localNumber: normalized };
+    return { dialCode: '+1', localNumber: normalized.replace(/\D/g, '').slice(0, maxDigits) };
   }
 
   const sortedByDialLength = [...countries].sort((a, b) => b.dialCode.length - a.dialCode.length);
   const matched = sortedByDialLength.find((country) => normalized.startsWith(country.dialCode));
 
   if (!matched) {
-    return { dialCode: '+1', localNumber: normalized.replace(/^\+/, '') };
+    return { dialCode: '+1', localNumber: normalized.replace(/^\+/, '').replace(/\D/g, '').slice(0, maxDigits) };
   }
 
   return {
     dialCode: matched.dialCode,
-    localNumber: normalized.slice(matched.dialCode.length).replace(/\D/g, ''),
+    localNumber: normalized.slice(matched.dialCode.length).replace(/\D/g, '').slice(0, maxDigits),
   };
 };
 
@@ -110,6 +111,7 @@ const PhoneInputWithCountry = ({
   required = false,
   disabled = false,
   placeholder = '771234567',
+  maxDigits = 10,
   className = '',
   selectClassName = '',
   inputClassName = '',
@@ -149,7 +151,13 @@ const PhoneInputWithCountry = ({
   }, []);
 
   useEffect(() => {
-    const parsed = splitPhone(value || '', countries);
+    const incomingValue = (value || '').trim();
+    if (!incomingValue) {
+      setLocalNumber('');
+      return;
+    }
+
+    const parsed = splitPhone(incomingValue, countries, maxDigits);
     const currentCountry = countries.find((country) => country.code === selectedCountryCode);
 
     setLocalNumber(parsed.localNumber);
@@ -162,7 +170,7 @@ const PhoneInputWithCountry = ({
     const matchedCountry = countries.find((country) => country.dialCode === parsed.dialCode);
     setDialCode(parsed.dialCode);
     setSelectedCountryCode(matchedCountry?.code || countries[0]?.code || 'US');
-  }, [value, countries, selectedCountryCode]);
+  }, [value, countries, selectedCountryCode, maxDigits]);
 
   const filteredCountries = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -180,7 +188,7 @@ const PhoneInputWithCountry = ({
   const selectedCountry = countries.find((country) => country.code === selectedCountryCode) || countries[0] || FALLBACK_COUNTRIES[0];
 
   const emitValue = (nextDialCode: string, nextLocalNumber: string) => {
-    const cleanLocal = nextLocalNumber.replace(/\D/g, '');
+    const cleanLocal = nextLocalNumber.replace(/\D/g, '').slice(0, maxDigits);
     if (!cleanLocal) {
       onChange('');
       return;
@@ -191,19 +199,21 @@ const PhoneInputWithCountry = ({
   const handleCountrySelect = (country: CountryOption) => {
     setSelectedCountryCode(country.code);
     setDialCode(country.dialCode);
-    emitValue(country.dialCode, localNumber);
+    if (localNumber) {
+      emitValue(country.dialCode, localNumber);
+    }
     setIsOpen(false);
     setSearch('');
   };
 
   const handleNumberChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const clean = event.target.value.replace(/\D/g, '');
+    const clean = event.target.value.replace(/\D/g, '').slice(0, maxDigits);
     setLocalNumber(clean);
     emitValue(dialCode, clean);
   };
 
   return (
-    <div className={`flex gap-2 ${className}`}>
+    <div className={`flex w-full min-w-0 gap-2 ${className}`}>
       <div ref={pickerRef} className="relative">
         <button
           type="button"
@@ -255,6 +265,7 @@ const PhoneInputWithCountry = ({
         required={required}
         disabled={disabled}
         inputMode="tel"
+        maxLength={maxDigits}
         placeholder={placeholder}
         className={inputClassName || 'flex-1 px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'}
       />

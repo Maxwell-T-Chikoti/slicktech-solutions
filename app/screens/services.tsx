@@ -166,6 +166,12 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
           </div>
         </div>
           
+        {services.length === 0 ? (
+          <div className="rounded-2xl border-2 border-slate-200 bg-white p-10 text-center">
+            <p className="text-lg font-semibold text-slate-800">No services are published yet.</p>
+            <p className="mt-2 text-sm text-slate-600">Please check back soon, or contact support to request a custom service quote.</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((service, idx) => (
             <div key={service.id} className="bg-white border-2 border-slate-200 rounded-[2.5rem] overflow-hidden shadow-sm hover:shadow-md hover:border-blue-300 transition-all group">
@@ -211,6 +217,7 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
             </div>
           ))}
         </div>
+        )}
       </main>
 
       {/* Footer */}

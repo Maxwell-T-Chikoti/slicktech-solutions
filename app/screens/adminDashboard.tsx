@@ -52,6 +52,7 @@ type ManagedStaffAccount = {
   email: string;
   phone?: string;
   location?: string;
+  performance_reset_at?: string | null;
   isDisabled: boolean;
   bannedUntil?: string | null;
 };
@@ -73,6 +74,25 @@ type StaffPerformanceSummary = {
   completedJobs: BookingWithProfile[];
 };
 
+type ActivityLogEntry = {
+  id: string | number;
+  action: string;
+  timestamp: string;
+  admin?: string;
+  category?: string;
+  source?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type StaffRecommendation = {
+  staffId: string;
+  score: number;
+  reasons: string[];
+  serviceCompletedCount: number;
+  activeCount: number;
+  completionRate: number;
+};
+
 const AI_DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 type DemandForecastRow = {
@@ -88,6 +108,8 @@ type DemandModelSummary = {
   lowDemandDay: string;
   note: string;
 };
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const { theme, toggleTheme } = useTheme();
@@ -113,7 +135,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({});
   const [staffNameDrafts, setStaffNameDrafts] = useState<Record<string, { firstName: string; surname: string }>>({});
   const [selectedStaffDetails, setSelectedStaffDetails] = useState<ManagedStaffAccount | null>(null);
-  const [activityLog, setActivityLog] = useState<any[]>([]);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -122,6 +144,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [staffToAssign, setStaffToAssign] = useState('');
   const [assigningStaff, setAssigningStaff] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
+  const [staffFormErrors, setStaffFormErrors] = useState<Partial<Record<'firstName' | 'surname' | 'email' | 'password', string>>>({});
   const [newStaffForm, setNewStaffForm] = useState({
     firstName: '',
     surname: '',
@@ -159,6 +182,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newFeatureInput, setNewFeatureInput] = useState<string>('');
   const [newServiceGradient, setNewServiceGradient] = useState<string>('linear-gradient(135deg, #60a5fa, #2563eb)');
   const [editingService, setEditingService] = useState<any | null>(null);
+  const [serviceFormErrors, setServiceFormErrors] = useState<Partial<Record<'title' | 'price', string>>>({});
   const [newServiceImageFile, setNewServiceImageFile] = useState<File | null>(null);
   const [newServiceImagePreview, setNewServiceImagePreview] = useState<string>('');
   const serviceImageInputRef = useRef<HTMLInputElement>(null);
@@ -417,7 +441,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           : action === 'enable'
           ? `Enabled ${staff.first_name} ${staff.surname}`
           : action === 'update-name'
-          ? `Updated staff name to ${draftName.firstName.trim()} ${draftName.surname.trim()}`
+          ? `Updated staff name to ${draftName.firstName.trim()} ${draftName.surname.trim()} and reset staff performance metrics to zero${typeof json?.clearedAssignments === 'number' ? ` (cleared ${json.clearedAssignments} assignment${json.clearedAssignments === 1 ? '' : 's'})` : ''}`
           : `Password reset for ${staff.first_name} ${staff.surname}`,
         'success'
       );
@@ -427,10 +451,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           : action === 'enable'
           ? `Enabled staff account ${staff.email}`
           : action === 'update-name'
-          ? `Updated staff name for ${staff.email}`
+          ? `Updated staff name for ${staff.email} and reset performance metrics baseline`
           : `Reset password for staff account ${staff.email}`
       );
       fetchManagedStaff();
+      if (action === 'update-name') {
+        fetchBookingsWithProfiles();
+      }
     } catch (error: any) {
       showAlertDialog(error?.message || 'Could not update staff account.', 'Staff action failed');
     } finally {
@@ -479,10 +506,21 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     const email = newStaffForm.email.trim().toLowerCase();
     const password = newStaffForm.password;
 
-    if (!firstName || !surname || !email || !password) {
-      showAlertDialog('Please fill in first name, surname, email, and password.', 'Missing information');
+    const nextErrors: Partial<Record<'firstName' | 'surname' | 'email' | 'password', string>> = {};
+    if (!firstName) nextErrors.firstName = 'First name is required.';
+    if (!surname) nextErrors.surname = 'Surname is required.';
+    if (!email) nextErrors.email = 'Email is required.';
+    else if (!EMAIL_REGEX.test(email)) nextErrors.email = 'Enter a valid staff email address.';
+    if (!password) nextErrors.password = 'Temporary password is required.';
+    else if (password.length < 8) nextErrors.password = 'Use at least 8 characters for better security.';
+
+    if (Object.keys(nextErrors).length > 0) {
+      setStaffFormErrors(nextErrors);
+      showAlertDialog('Please correct the staff form fields before creating the account.', 'Invalid staff form');
       return;
     }
+
+    setStaffFormErrors({});
 
     setCreatingStaff(true);
     try {
@@ -543,11 +581,32 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       }
 
       const selectedStaff = staffMembers.find((s) => s.id === staffToAssign);
+      const recommendationUsed =
+        !!recommendedStaffForSelectedBooking &&
+        !!staffToAssign &&
+        recommendedStaffForSelectedBooking.staffId === staffToAssign;
       addNotification(
         selectedStaff
           ? `Assigned booking #${selectedBooking.id} to ${selectedStaff.first_name} ${selectedStaff.surname}`
           : `Removed staff assignment for booking #${selectedBooking.id}`,
         'success'
+      );
+      logActivity(
+        selectedStaff
+          ? `Assigned booking #${selectedBooking.id} to ${selectedStaff.first_name} ${selectedStaff.surname}${recommendationUsed ? ' (recommended match)' : ''}`
+          : `Removed staff assignment for booking #${selectedBooking.id}`,
+        {
+          category: 'assignment',
+          source: 'admin-dashboard',
+          targetType: 'booking',
+          targetId: selectedBooking.id,
+          metadata: {
+            staffId: staffToAssign || null,
+            recommendationUsed,
+            recommendationScore: recommendationUsed ? recommendedStaffForSelectedBooking?.score ?? null : null,
+            service: selectedBooking.service,
+          },
+        }
       );
       fetchBookingsWithProfiles();
       setSelectedBooking((prev) => (prev ? { ...prev, assigned_staff_id: assignId } : prev));
@@ -694,6 +753,87 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     setLoading(false);
   };
 
+  const getAdminAuthToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.access_token || '';
+  };
+
+  const mapActivityFromApi = (log: any): ActivityLogEntry => ({
+    id: log.id,
+    action: log.action,
+    timestamp: log.created_at || new Date().toISOString(),
+    admin: log.actor_email || log.actor_role || 'System',
+    category: log.category || 'general',
+    source: log.source || 'web',
+    metadata: (log.metadata || {}) as Record<string, unknown>,
+  });
+
+  const fetchActivityLogs = async () => {
+    try {
+      const token = await getAdminAuthToken();
+      if (!token) return;
+
+      const response = await fetch('/api/admin/audit/logs?limit=500', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json();
+      const logs = Array.isArray(payload?.logs) ? payload.logs.map(mapActivityFromApi) : [];
+      setActivityLog(logs);
+    } catch (error) {
+      console.warn('Failed to fetch persisted audit logs:', error);
+    }
+  };
+
+  const exportAuditLogs = async () => {
+    try {
+      const token = await getAdminAuthToken();
+      if (!token) {
+        showAlertDialog('Missing admin session. Please sign in again.', 'Export failed');
+        return;
+      }
+
+      const response = await fetch('/api/admin/audit/export?limit=10000', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || 'Export failed');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      logActivity('Exported persistent audit logs (CSV)', {
+        category: 'export',
+        source: 'admin-dashboard',
+        metadata: { limit: 10000, format: 'csv' },
+      });
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not export audit logs.', 'Export failed');
+    }
+  };
+
   useEffect(() => {
     const checkAuthAndFetch = async () => {
       const {
@@ -724,7 +864,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchBlockedDates();
       fetchStaffMembers();
       fetchManagedStaff();
-      logActivity('Admin logged in');
+      fetchActivityLogs();
+      logActivity('Admin logged in', { category: 'auth', source: 'admin-dashboard' });
 
       // Set up real-time subscription for new bookings
       const channel = supabase
@@ -950,7 +1091,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   // Service management
   const addService = async () => {
-    if (!newServiceTitle.trim() || !newServicePrice.trim()) return;
+    const trimmedTitle = newServiceTitle.trim();
+    const trimmedPrice = newServicePrice.trim();
+    const nextErrors: Partial<Record<'title' | 'price', string>> = {};
+
+    if (!trimmedTitle) {
+      nextErrors.title = 'Service title is required.';
+    }
+    if (!trimmedPrice) {
+      nextErrors.price = 'Service price is required.';
+    } else if (Number.isNaN(parseFloat(trimmedPrice.replace(/[^0-9.]/g, '')))) {
+      nextErrors.price = 'Enter a numeric amount (for example CAD$500).';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setServiceFormErrors(nextErrors);
+      addNotification('Please fix the service form fields before saving.', 'warning');
+      return;
+    }
+
+    setServiceFormErrors({});
 
     // debug: log current session and role
     try {
@@ -990,8 +1150,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
       // Build payload — only include image_url when it has a value so missing DB column doesn't error
       const servicePayload: Record<string, unknown> = {
-        title: newServiceTitle.trim(),
-        price: newServicePrice.trim(),
+        title: trimmedTitle,
+        price: trimmedPrice,
         description: newServiceDescription.trim(),
         features: newServiceFeatures,
         image: newServiceGradient,
@@ -1073,14 +1233,68 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   // Activity logging
-  const logActivity = (action: string) => {
-    const newActivity = {
-      id: Date.now(),
+  const logActivity = (
+    action: string,
+    options?: {
+      category?: string;
+      source?: string;
+      targetType?: string;
+      targetId?: string | number;
+      metadata?: Record<string, unknown>;
+    }
+  ) => {
+    const tempId = `tmp-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    const nowIso = new Date().toISOString();
+
+    const optimisticActivity: ActivityLogEntry = {
+      id: tempId,
       action,
-      timestamp: new Date().toISOString(),
-      admin: 'Admin'
+      timestamp: nowIso,
+      admin: 'Admin',
+      category: options?.category || 'admin-action',
+      source: options?.source || 'admin-dashboard',
+      metadata: options?.metadata || {},
     };
-    setActivityLog(prev => [newActivity, ...prev.slice(0, 49)]); // Keep last 50 activities
+
+    setActivityLog((prev) => [optimisticActivity, ...prev].slice(0, 500));
+
+    // Persist audit logs in DB so logs survive logout/session resets.
+    void (async () => {
+      try {
+        const token = await getAdminAuthToken();
+        if (!token) return;
+
+        const response = await fetch('/api/admin/audit/logs', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action,
+            category: options?.category || 'admin-action',
+            source: options?.source || 'admin-dashboard',
+            targetType: options?.targetType,
+            targetId: options?.targetId,
+            metadata: options?.metadata || {},
+          }),
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = await response.json();
+        if (!payload?.log) {
+          return;
+        }
+
+        const persisted = mapActivityFromApi(payload.log);
+        setActivityLog((prev) => [persisted, ...prev.filter((item) => item.id !== tempId)].slice(0, 500));
+      } catch (error) {
+        console.warn('Failed to persist audit log entry:', error);
+      }
+    })();
   };
 
   // Customer management
@@ -1179,6 +1393,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   const staffPerformanceById = useMemo<Record<string, StaffPerformanceSummary>>(() => {
     const map: Record<string, StaffPerformanceSummary> = {};
+    const performanceResetByStaffId = new Map<string, number>();
 
     const ensure = (staffId: string) => {
       if (!map[staffId]) {
@@ -1203,11 +1418,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       return map[staffId];
     };
 
-    managedStaff.forEach((staff) => ensure(staff.id));
+    managedStaff.forEach((staff) => {
+      ensure(staff.id);
+      const resetTs = staff.performance_reset_at ? new Date(staff.performance_reset_at).getTime() : 0;
+      performanceResetByStaffId.set(staff.id, Number.isNaN(resetTs) ? 0 : resetTs);
+    });
 
     bookings.forEach((booking) => {
       const staffId = booking.assigned_staff_id || '';
       if (!staffId) return;
+
+      // When an admin reassigns a staff account to a new person, metrics are reset from this baseline.
+      const resetBaselineTs = performanceResetByStaffId.get(staffId) || 0;
+      const bookingBaselineTs = getBookingTimestamp(booking);
+      if (resetBaselineTs && bookingBaselineTs < resetBaselineTs) {
+        return;
+      }
 
       const summary = ensure(staffId);
       summary.assignedCount += 1;
@@ -1251,6 +1477,72 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     return map;
   }, [bookings, managedStaff]);
+
+  const recommendedStaffForSelectedBooking = useMemo<StaffRecommendation | null>(() => {
+    if (!selectedBooking || staffMembers.length === 0) {
+      return null;
+    }
+
+    const serviceName = (selectedBooking.service || '').trim().toLowerCase();
+    let best: StaffRecommendation | null = null;
+
+    staffMembers.forEach((staff) => {
+      const summary = staffPerformanceById[staff.id] || {
+        assignedCount: 0,
+        completedCount: 0,
+        activeCount: 0,
+        pendingCount: 0,
+        rejectedCount: 0,
+        acknowledgedCount: 0,
+        notesCount: 0,
+        completionRate: 0,
+        totalRevenueCAD: 0,
+        averageCompletedValueCAD: 0,
+        topService: 'N/A',
+        lastCompletedAt: null,
+        jobs: [],
+        completedJobs: [],
+      } as StaffPerformanceSummary;
+
+      const serviceCompletedCount = summary.completedJobs.filter(
+        (job) => (job.service || '').trim().toLowerCase() === serviceName
+      ).length;
+
+      const experienceScore = Math.min(serviceCompletedCount * 20, 40);
+      const reliabilityScore = Math.max(0, Math.min(35, summary.completionRate * 0.35));
+      const availabilityScore = Math.max(0, 25 - summary.activeCount * 5);
+      const continuityScore = summary.topService.toLowerCase() === serviceName ? 10 : 0;
+      const score = Math.round(experienceScore + reliabilityScore + availabilityScore + continuityScore);
+
+      const reasons: string[] = [];
+      if (serviceCompletedCount > 0) {
+        reasons.push(`${serviceCompletedCount} completed ${selectedBooking.service} job${serviceCompletedCount === 1 ? '' : 's'}`);
+      } else {
+        reasons.push('No direct completions on this exact service yet');
+      }
+      reasons.push(`${summary.completionRate}% completion rate`);
+      reasons.push(
+        summary.activeCount === 0
+          ? 'Currently available (no active jobs)'
+          : `${summary.activeCount} active job${summary.activeCount === 1 ? '' : 's'} in progress`
+      );
+
+      const candidate: StaffRecommendation = {
+        staffId: staff.id,
+        score,
+        reasons,
+        serviceCompletedCount,
+        activeCount: summary.activeCount,
+        completionRate: summary.completionRate,
+      };
+
+      if (!best || candidate.score > best.score) {
+        best = candidate;
+      }
+    });
+
+    return best;
+  }, [selectedBooking, staffMembers, staffPerformanceById]);
 
   const aiDemandInsights = React.useMemo(() => {
     const dayCounts: Record<string, number> = {
@@ -1883,8 +2175,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
             </div>
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center h-screen">
-            <div className="loader ease-linear rounded-full border-8 border-white/20 border-t-white h-16 w-16"></div>
+          <div className="px-6 py-12">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {[...Array(3)].map((_, idx) => (
+                <div key={idx} className="h-28 rounded-2xl border border-slate-200 bg-white/70 animate-pulse" />
+              ))}
+            </div>
+            <div className="h-96 rounded-2xl border border-slate-200 bg-white/70 animate-pulse" />
           </div>
         ) : (
           <>
@@ -2504,7 +2801,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   </div>
                   {filteredBookings.length === 0 ? (
                     <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-12 text-center">
-                      <p className="text-slate-600 text-lg">No bookings found.</p>
+                      <p className="text-slate-700 text-lg font-semibold">No bookings match your filters.</p>
+                      <p className="mt-2 text-sm text-slate-600">Try clearing filters or selecting a wider date range to see more activity.</p>
                     </div>
                   ) : (
                     <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
@@ -2633,7 +2931,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 {loadingManagedStaff ? (
                   <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">Loading staff accounts...</div>
                 ) : managedStaff.length === 0 ? (
-                  <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">No staff accounts found.</div>
+                  <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">
+                    <p className="font-semibold text-slate-800">No staff yet.</p>
+                    <p className="mt-1 text-sm">Add your first staff account below to start assigning bookings.</p>
+                  </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {managedStaff.map((staff) => {
@@ -2701,7 +3002,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             />
                           </div>
                           <button
-                            onClick={() => updateStaffAccount(staff, 'update-name')}
+                            onClick={() =>
+                              showConfirmDialog(
+                                `Changing this staff name will reset all tracked performance metrics (assigned, completed, active jobs, rates and revenue summaries) to 0 from now onward for this account. Continue?`,
+                                () => updateStaffAccount(staff, 'update-name'),
+                                'Confirm staff reassignment',
+                                'Yes, update and reset metrics'
+                              )
+                            }
                             disabled={staffActionInProgressId === staff.id}
                             className="mt-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900 disabled:bg-slate-400"
                           >
@@ -2816,29 +3124,41 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       type="text"
                       placeholder="First name"
                       value={newStaffForm.firstName}
-                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                      onChange={(e) => {
+                        setNewStaffForm((prev) => ({ ...prev, firstName: e.target.value }));
+                        setStaffFormErrors((prev) => ({ ...prev, firstName: '' }));
+                      }}
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 ${staffFormErrors.firstName ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     <input
                       type="text"
                       placeholder="Surname"
                       value={newStaffForm.surname}
-                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, surname: e.target.value }))}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                      onChange={(e) => {
+                        setNewStaffForm((prev) => ({ ...prev, surname: e.target.value }));
+                        setStaffFormErrors((prev) => ({ ...prev, surname: '' }));
+                      }}
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 ${staffFormErrors.surname ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     <input
                       type="email"
                       placeholder="Staff email"
                       value={newStaffForm.email}
-                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, email: e.target.value }))}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                      onChange={(e) => {
+                        setNewStaffForm((prev) => ({ ...prev, email: e.target.value }));
+                        setStaffFormErrors((prev) => ({ ...prev, email: '' }));
+                      }}
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 ${staffFormErrors.email ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     <input
                       type="password"
                       placeholder="Temporary password (min 8 chars)"
                       value={newStaffForm.password}
-                      onChange={(e) => setNewStaffForm((prev) => ({ ...prev, password: e.target.value }))}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
+                      onChange={(e) => {
+                        setNewStaffForm((prev) => ({ ...prev, password: e.target.value }));
+                        setStaffFormErrors((prev) => ({ ...prev, password: '' }));
+                      }}
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 ${staffFormErrors.password ? 'border-red-400' : 'border-gray-300'}`}
                     />
                     <PhoneInputWithCountry
                       value={newStaffForm.phone}
@@ -2856,6 +3176,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900"
                     />
                   </div>
+                  {(staffFormErrors.firstName || staffFormErrors.surname || staffFormErrors.email || staffFormErrors.password) && (
+                    <div className="mt-3 space-y-1">
+                      {staffFormErrors.firstName && <p className="text-xs font-semibold text-red-600">{staffFormErrors.firstName}</p>}
+                      {staffFormErrors.surname && <p className="text-xs font-semibold text-red-600">{staffFormErrors.surname}</p>}
+                      {staffFormErrors.email && <p className="text-xs font-semibold text-red-600">{staffFormErrors.email}</p>}
+                      {staffFormErrors.password && <p className="text-xs font-semibold text-red-600">{staffFormErrors.password}</p>}
+                    </div>
+                  )}
                   <button
                     onClick={createStaffMember}
                     disabled={creatingStaff}
@@ -2890,6 +3218,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <div>
                             <h3 className="text-xl font-bold text-slate-900">{selectedStaffDetails.first_name} {selectedStaffDetails.surname}</h3>
                             <p className="text-sm text-slate-600">{selectedStaffDetails.email}</p>
+                            {selectedStaffDetails.performance_reset_at && (
+                              <p className="mt-1 text-xs text-amber-700">
+                                Performance baseline reset on {new Date(selectedStaffDetails.performance_reset_at).toLocaleString()}
+                              </p>
+                            )}
                           </div>
                           <button
                             onClick={() => setSelectedStaffDetails(null)}
@@ -3008,14 +3341,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
             {activeTab === 'activity' && (
               <div className="px-6 py-12">
-                <h2 className="text-2xl font-bold text-slate-900 mb-8">📝 Activity Log</h2>
+                <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="text-2xl font-bold text-slate-900">📝 Activity Log</h2>
+                  <button
+                    onClick={exportAuditLogs}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    <FaDownload className="text-xs" />
+                    Download Audit CSV
+                  </button>
+                </div>
                 <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
                   <div className="max-h-96 overflow-y-auto">
                     {activityLog.length === 0 ? (
-                      <div className="p-8 text-center text-slate-600">No activity recorded yet.</div>
+                      <div className="p-8 text-center text-slate-600">
+                        <p className="font-semibold text-slate-800">No activity recorded yet.</p>
+                        <p className="mt-1 text-sm">Actions like booking updates, staff changes, messages, and exports will appear here.</p>
+                      </div>
                     ) : (
-                      activityLog.map((activity, idx) => (
-                        <div key={idx} className="p-4 border-b border-gray-200 hover:bg-white/50 transition-colors">
+                      activityLog.map((activity) => (
+                        <div key={activity.id} className="p-4 border-b border-gray-200 hover:bg-white/50 transition-colors">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                               <FaHistory className="text-blue-600 text-sm" />
@@ -3024,6 +3369,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                               <p className="text-slate-900 font-medium">{activity.action}</p>
                               <p className="text-sm text-slate-600">
                                 {new Date(activity.timestamp).toLocaleString()}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {activity.admin || 'System'} • {activity.category || 'general'} • {activity.source || 'web'}
                               </p>
                             </div>
                           </div>
@@ -3047,17 +3395,29 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         type="text"
                         placeholder="Service title"
                         value={newServiceTitle}
-                        onChange={(e) => setNewServiceTitle(e.target.value)}
-                        className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                        onChange={(e) => {
+                          setNewServiceTitle(e.target.value);
+                          setServiceFormErrors((prev) => ({ ...prev, title: '' }));
+                        }}
+                        className={`flex-1 px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500 ${serviceFormErrors.title ? 'border-red-400' : 'border-gray-300'}`}
                       />
                       <input
                         type="text"
                         placeholder="Price (e.g. CAD$500)"
                         value={newServicePrice}
-                        onChange={(e) => setNewServicePrice(e.target.value)}
-                        className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500"
+                        onChange={(e) => {
+                          setNewServicePrice(e.target.value);
+                          setServiceFormErrors((prev) => ({ ...prev, price: '' }));
+                        }}
+                        className={`flex-1 px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500 ${serviceFormErrors.price ? 'border-red-400' : 'border-gray-300'}`}
                       />
                     </div>
+                    {(serviceFormErrors.title || serviceFormErrors.price) && (
+                      <div className="space-y-1">
+                        {serviceFormErrors.title && <p className="text-xs font-semibold text-red-600">{serviceFormErrors.title}</p>}
+                        {serviceFormErrors.price && <p className="text-xs font-semibold text-red-600">{serviceFormErrors.price}</p>}
+                      </div>
+                    )}
                     <textarea
                       placeholder="Description (e.g. Optimize your network for maximum speed and reliability...)"
                       value={newServiceDescription}
@@ -3472,6 +3832,37 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       {/* Staff Assignment */}
                       <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
                         <h3 className="font-bold text-slate-900 mb-4">Assign Staff</h3>
+                        {recommendedStaffForSelectedBooking && (() => {
+                          const recommendedStaff = staffMembers.find((staff) => staff.id === recommendedStaffForSelectedBooking.staffId);
+                          if (!recommendedStaff) return null;
+
+                          return (
+                            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Recommended assignment</p>
+                                  <p className="text-sm font-bold text-slate-900 mt-1">
+                                    {recommendedStaff.first_name} {recommendedStaff.surname} ({recommendedStaff.email})
+                                  </p>
+                                  <p className="text-xs text-emerald-800 mt-1">Match score: {recommendedStaffForSelectedBooking.score}/100</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setStaffToAssign(recommendedStaff.id)}
+                                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                                >
+                                  Use Recommendation
+                                </button>
+                              </div>
+                              <ul className="mt-3 space-y-1 text-xs text-slate-700">
+                                {recommendedStaffForSelectedBooking.reasons.map((reason) => (
+                                  <li key={reason}>- {reason}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          );
+                        })()}
+
                         <div className="flex flex-col sm:flex-row gap-3">
                           <select
                             value={staffToAssign}

@@ -30,38 +30,54 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'firstName' | 'surname' | 'email' | 'phone' | 'location' | 'password' | 'confirmPassword', string>>>({});
 
   // Helper to handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
     setFormData({ ...formData, [name]: value });
+    setFieldErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const nextErrors: Partial<Record<'firstName' | 'surname' | 'email' | 'phone' | 'location' | 'password' | 'confirmPassword', string>> = {};
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      setLoading(false);
-      return;
-    }
+    if (!formData.firstName.trim()) nextErrors.firstName = 'First name is required.';
+    if (!formData.surname.trim()) nextErrors.surname = 'Surname is required.';
+    if (!formData.location.trim()) nextErrors.location = 'Location is required.';
 
     const normalizedEmail = formData.email.trim().toLowerCase();
-    if (!EMAIL_REGEX.test(normalizedEmail)) {
-      setError('Please enter a valid email address.');
+    if (!normalizedEmail) nextErrors.email = 'Email is required.';
+    else if (!EMAIL_REGEX.test(normalizedEmail)) nextErrors.email = 'Please enter a valid email address.';
+
+    const normalizedPhone = formData.phone.trim();
+    if (!normalizedPhone) nextErrors.phone = 'Phone number is required.';
+    else if (!MOBILE_REGEX.test(normalizedPhone)) nextErrors.phone = 'Use international format (for example: +263771234567).';
+
+    if (!formData.password) {
+      nextErrors.password = 'Password is required.';
+    } else if (formData.password.length < 8) {
+      nextErrors.password = 'Use at least 8 characters for better security.';
+    }
+
+    if (!formData.confirmPassword) {
+      nextErrors.confirmPassword = 'Please confirm your password.';
+    } else if (formData.password !== formData.confirmPassword) {
+      nextErrors.confirmPassword = 'Passwords do not match.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setError('Please correct the highlighted fields.');
       setLoading(false);
       return;
     }
 
-    const normalizedPhone = formData.phone.trim();
-    if (!MOBILE_REGEX.test(normalizedPhone)) {
-      setError('Please enter a valid mobile number (for example: +263771234567).');
-      setLoading(false);
-      return;
-    }
+    setFieldErrors({});
 
     try {
       // Create user in Supabase auth (this will be stored in the authentication system)
@@ -79,7 +95,12 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       });
 
       if (authError || !authData?.user) {
-        setError(`Authentication failed: ${authError?.message || 'Unknown error'}`);
+        const authMsg = String(authError?.message || '').toLowerCase();
+        if (authMsg.includes('already registered') || authMsg.includes('already been registered')) {
+          setError('An account with this email already exists. Try signing in instead.');
+        } else {
+          setError(`Authentication failed: ${authError?.message || 'Unknown error'}`);
+        }
         setLoading(false);
         return;
       }
@@ -161,7 +182,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
       }, 2000);
     } catch (err) {
       console.error('Signup error:', err);
-      setError('Registration failed. Please try again.');
+      setError('Registration failed due to a temporary issue. Please try again.');
       setLoading(false);
     }
   };
@@ -179,7 +200,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 height={160}
                 className="rounded-full shadow-2xl object-cover border-4 border-white"
               />
-              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                 <FaUser className="text-white text-xs" />
               </div>
             </div>
@@ -199,9 +220,9 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
             </div>
           )}
           {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl text-sm mb-6 shadow-sm animate-slide-down">
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 p-4 rounded-xl text-sm mb-6 shadow-sm animate-slide-down">
               <div className="flex items-center">
-                <FaUser className="mr-2 text-green-500" />
+                <FaUser className="mr-2 text-blue-500" />
                 {success}
               </div>
             </div>
@@ -209,8 +230,8 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
 
           <form className="space-y-5" onSubmit={handleSignup}>
             {/* First Name & Surname Row */}
-            <div className="flex gap-4">
-              <div className="flex-1 group">
+            <div className="flex flex-col gap-4">
+              <div className="w-full min-w-0 group">
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">First Name</label>
                 <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
@@ -218,12 +239,14 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                   </div>
                   <input name="firstName" type="text" value={formData.firstName} onChange={handleChange} placeholder="John" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
+                {fieldErrors.firstName && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.firstName}</p>}
               </div>
               <div className="flex-1 group">
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Surname</label>
                 <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
                   <input name="surname" type="text" value={formData.surname} onChange={handleChange} placeholder="Doe" className="w-full px-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
+                {fieldErrors.surname && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.surname}</p>}
               </div>
             </div>
 
@@ -236,11 +259,11 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 </div>
                 <input name="email" type="email" value={formData.email} onChange={handleChange} placeholder="email@address.com" pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$" title="Enter a valid email address" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
+              {fieldErrors.email && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.email}</p>}
             </div>
 
-            {/* Phone & Location Row */}
-            <div className="flex gap-4">
-              <div className="flex-1 group">
+            {/* Phone */}
+            <div className="group w-full">
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Phone</label>
                 <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
@@ -249,16 +272,22 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                   <div className="pl-12 pr-3 py-2">
                     <PhoneInputWithCountry
                       value={formData.phone}
-                      onChange={(phoneValue) => setFormData((prev) => ({ ...prev, phone: phoneValue }))}
+                      onChange={(phoneValue) => {
+                        setFormData((prev) => ({ ...prev, phone: phoneValue }));
+                        setFieldErrors((prev) => ({ ...prev, phone: '' }));
+                      }}
                       required
                       className="items-center"
-                      selectClassName="w-44 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      selectClassName="w-full sm:w-44 px-2 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       inputClassName="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
-              </div>
-              <div className="flex-1 group">
+                {fieldErrors.phone && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.phone}</p>}
+            </div>
+
+            {/* Location */}
+            <div className="group w-full">
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Address / Location</label>
                 <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
@@ -266,7 +295,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                   </div>
                   <input name="location" type="text" value={formData.location} onChange={handleChange} placeholder="Street address, area, city" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
                 </div>
-              </div>
+                {fieldErrors.location && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.location}</p>}
             </div>
 
             {/* Password */}
@@ -278,6 +307,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 </div>
                 <input name="password" type="password" value={formData.password} onChange={handleChange} placeholder="••••••••" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
+              {fieldErrors.password && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.password}</p>}
             </div>
 
             <div className="group">
@@ -288,9 +318,10 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
                 </div>
                 <input name="confirmPassword" type="password" value={formData.confirmPassword} onChange={handleChange} placeholder="••••••••" className="w-full pl-12 pr-4 py-4 outline-none text-sm text-slate-700 placeholder-slate-400 rounded-xl bg-transparent" required />
               </div>
+              {fieldErrors.confirmPassword && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.confirmPassword}</p>}
             </div>
 
-            <button type="submit" disabled={loading || success !== null} className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-4 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 uppercase tracking-widest disabled:opacity-70 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]">
+            <button type="submit" disabled={loading || success !== null} className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-4 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-300 uppercase tracking-widest disabled:opacity-70 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]">
               {loading ? (
                 <div className="flex items-center justify-center">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
@@ -304,7 +335,7 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
 
         </div>
       </div>
-      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 relative overflow-hidden rounded-l-[60px] items-center justify-center">
+      <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 relative overflow-hidden rounded-l-[60px] items-center justify-center">
         <div className="absolute inset-0 bg-black/10"></div>
         <div className="relative z-10 w-3/4">
           <div className="w-full h-80 bg-white/10 backdrop-blur-sm rounded-3xl border border-white/20 flex items-center justify-center shadow-2xl">
@@ -318,11 +349,11 @@ const SignupScreen = ({ onToggle }: SignupScreenProps) => {
           </div>
           <div className="text-center mt-8">
             <h2 className="text-white text-2xl font-bold mb-2">Welcome Aboard</h2>
-            <p className="text-green-200 text-sm">Join our community of tech enthusiasts</p>
+            <p className="text-blue-200 text-sm">Join our community of tech enthusiasts</p>
           </div>
         </div>
         <div className="absolute top-[-20%] right-[-20%] w-96 h-96 bg-white/5 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-[-20%] left-[-20%] w-96 h-96 bg-green-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute bottom-[-20%] left-[-20%] w-96 h-96 bg-blue-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-white/5 rounded-full blur-2xl animate-bounce delay-500"></div>
       </div>
     </div>

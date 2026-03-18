@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { getRequestIp, writeAuditLog } from '@/app/lib/auditLogger';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -159,6 +160,24 @@ export async function POST(request: NextRequest) {
       to: userEmail,
       subject: `Booking Confirmation - ${service}`,
       html: htmlContent,
+    });
+
+    await writeAuditLog({
+      action: 'Booking confirmation email sent',
+      category: 'message',
+      source: 'api:send-booking-confirmation',
+      targetType: 'booking',
+      targetId: bookingId ?? null,
+      ipAddress: getRequestIp(request),
+      metadata: {
+        userEmail,
+        userName,
+        service,
+        date,
+        time,
+        description: description || null,
+        extraServices: extraServices || null,
+      },
     });
 
     // `result` may wrap the response inside a `data` property according to types

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { COMPANY_KNOWLEDGE } from '@/app/lib/companyKnowledge';
+import { getRequestIp, writeAuditLog } from '@/app/lib/auditLogger';
 
 type Message = {
   role: 'system' | 'user' | 'assistant';
@@ -44,6 +45,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message is required.' }, { status: 400 });
     }
 
+    await writeAuditLog({
+      action: 'User submitted chatbot message',
+      category: 'message',
+      source: 'api:chat',
+      ipAddress: getRequestIp(req),
+      metadata: {
+        message,
+        historyCount: Array.isArray(history) ? history.length : 0,
+      },
+    });
+
     const safeHistory = history
       .filter((entry) => entry?.role === 'user' || entry?.role === 'assistant')
       .slice(-10);
@@ -82,6 +94,16 @@ export async function POST(req: NextRequest) {
     if (!assistantMessage) {
       return NextResponse.json({ error: 'No response from AI.' }, { status: 502 });
     }
+
+    await writeAuditLog({
+      action: 'AI chatbot response generated',
+      category: 'message',
+      source: 'api:chat',
+      ipAddress: getRequestIp(req),
+      metadata: {
+        responseLength: String(assistantMessage).length,
+      },
+    });
 
     return NextResponse.json({
       message: assistantMessage,

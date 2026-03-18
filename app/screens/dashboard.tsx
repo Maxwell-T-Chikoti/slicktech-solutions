@@ -57,7 +57,7 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
 
   const fetchTechNews = async () => {
     try {
-      const response = await fetch('https://dev.to/api/articles?tag=technology&top=5&per_page=5');
+      const response = await fetch('https://dev.to/api/articles?tag=technology&top=8&per_page=8');
       const data = await response.json();
       setTechNews(data || []);
     } catch (e) { console.error(e); }
@@ -185,54 +185,65 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
                   ))}
                 </div>
               </div>
+
+              {/* Quick Actions Section */}
+              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                <div className="w-40 h-6 bg-slate-200 rounded animate-pulse mb-8"></div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-16 bg-slate-100 border border-slate-200 rounded-2xl animate-pulse"></div>
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="w-full h-4 bg-slate-100 rounded animate-pulse"></div>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Sidebar Skeleton */}
-            <div className="space-y-10">
+            <div>
               {/* Tech Insights */}
-              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
-                <div className="w-24 h-5 bg-slate-200 rounded animate-pulse mb-6"></div>
-                <div className="space-y-6">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+              <div className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm min-h-[620px]">
+                <div className="w-32 h-6 bg-slate-200 rounded animate-pulse mb-2"></div>
+                <div className="w-56 h-4 bg-slate-200 rounded animate-pulse mb-6"></div>
+                <div className="space-y-4">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="w-full h-28 bg-slate-200 rounded-xl animate-pulse mb-3"></div>
                       <div className="w-full h-4 bg-slate-200 rounded animate-pulse mb-2"></div>
+                      <div className="w-4/5 h-4 bg-slate-200 rounded animate-pulse mb-3"></div>
                       <div className="w-24 h-3 bg-slate-200 rounded animate-pulse"></div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Support Card */}
-              <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
-                <div className="w-32 h-6 bg-slate-700 rounded animate-pulse mb-3"></div>
-                <div className="w-full h-4 bg-slate-700 rounded animate-pulse mb-8"></div>
-                <div className="w-full h-12 bg-slate-700 rounded-xl animate-pulse"></div>
-              </div>
             </div>
           </div>
 
           {/* Services Section Skeleton */}
-          <div className="bg-slate-900 rounded-[3rem] p-10 md:p-14">
+          <div className="bg-white border-2 border-slate-200 rounded-[3rem] p-10 md:p-14">
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
               <div>
-                <div className="w-64 h-8 bg-slate-700 rounded animate-pulse mb-2"></div>
-                <div className="w-80 h-5 bg-slate-700 rounded animate-pulse"></div>
+                <div className="w-64 h-8 bg-slate-200 rounded animate-pulse mb-2"></div>
+                <div className="w-80 h-5 bg-slate-200 rounded animate-pulse"></div>
               </div>
-              <div className="w-40 h-10 bg-slate-700 rounded-xl animate-pulse"></div>
+              <div className="w-40 h-10 bg-slate-200 rounded-xl animate-pulse"></div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="bg-slate-800 border border-slate-700 rounded-3xl p-8">
-                  <div className="w-16 h-16 bg-slate-700 rounded-2xl animate-pulse mb-6"></div>
-                  <div className="w-32 h-6 bg-slate-700 rounded animate-pulse mb-3"></div>
+                <div key={i} className="bg-slate-50 border border-slate-200 rounded-3xl p-8">
+                  <div className="w-16 h-16 bg-slate-200 rounded-2xl animate-pulse mb-6"></div>
+                  <div className="w-32 h-6 bg-slate-200 rounded animate-pulse mb-3"></div>
                   <div className="space-y-2 mb-8">
-                    <div className="w-full h-4 bg-slate-700 rounded animate-pulse"></div>
-                    <div className="w-5/6 h-4 bg-slate-700 rounded animate-pulse"></div>
+                    <div className="w-full h-4 bg-slate-200 rounded animate-pulse"></div>
+                    <div className="w-5/6 h-4 bg-slate-200 rounded animate-pulse"></div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <div className="w-16 h-6 bg-slate-700 rounded animate-pulse"></div>
-                    <div className="w-20 h-10 bg-slate-700 rounded-2xl animate-pulse"></div>
+                    <div className="w-16 h-6 bg-slate-200 rounded animate-pulse"></div>
+                    <div className="w-20 h-10 bg-slate-200 rounded-2xl animate-pulse"></div>
                   </div>
                 </div>
               ))}
@@ -361,54 +372,150 @@ const UserDashboard = ({ onLogout }: UserDashboardProps) => {
                 ))}
               </div>
             </section>
+
+            <section className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+              <h2 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-3">
+                <span className="w-2 h-7 bg-blue-600 rounded-full"></span> Quick Actions
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button
+                  onClick={() => handleNavigate('newbooking')}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-left font-bold text-slate-800 hover:bg-blue-50 hover:border-blue-200 transition-all"
+                >
+                  Book New Service
+                </button>
+                <button
+                  onClick={() => handleNavigate('bookings')}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-left font-bold text-slate-800 hover:bg-blue-50 hover:border-blue-200 transition-all"
+                >
+                  Manage Bookings
+                </button>
+                <button
+                  onClick={() => handleNavigate('services')}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-left font-bold text-slate-800 hover:bg-blue-50 hover:border-blue-200 transition-all"
+                >
+                  Browse Services
+                </button>
+              </div>
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                <p className="text-sm font-semibold text-slate-700">Tip</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Keep your profile details up to date so technicians can reach you quickly for confirmations and onsite visits.
+                </p>
+              </div>
+            </section>
+
+            <section className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+              <h2 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                <span className="w-2 h-7 bg-emerald-600 rounded-full"></span> Plan Your Next Service
+              </h2>
+
+              {services.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {services.slice(0, 2).map((service) => (
+                    <div key={service.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                      <p className="text-sm font-black text-slate-900 line-clamp-1">{service.title}</p>
+                      <p className="mt-2 text-xs text-slate-500 line-clamp-2">{service.description}</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <span className="text-sm font-bold text-blue-600">{service.price}</span>
+                        <button
+                          onClick={() => handleNavigate('newbooking', service.title)}
+                          className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-slate-900 transition-colors"
+                        >
+                          Book Now
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+                  <p className="text-sm font-semibold text-slate-600">No services loaded yet.</p>
+                  <button
+                    onClick={() => handleNavigate('services')}
+                    className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-slate-900 transition-colors"
+                  >
+                    View Services
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 px-5 py-4">
+                <p className="text-sm font-semibold text-slate-800">Smart reminder</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Schedule routine checkups monthly to reduce emergency callouts and improve system reliability.
+                </p>
+              </div>
+            </section>
           </div>
 
           {/* Sidebar Area */}
-          <div className="space-y-10">
-            <section className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
-              <h2 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-3 underline decoration-blue-500 underline-offset-8">
+          <div>
+            <section className="bg-white border-2 border-slate-200 rounded-[2.5rem] p-8 shadow-sm min-h-[620px]">
+              <h2 className="text-lg font-black text-slate-900 mb-1 flex items-center gap-3 underline decoration-blue-500 underline-offset-8">
                 Tech Insights
               </h2>
-              <div className="space-y-6">
-                {techNews.map((news, i) => (
-                  <a key={i} href={news.url} target="_blank" className="block group border-b border-slate-100 last:border-0 pb-4 last:pb-0">
-                    <p className="text-sm font-bold text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors">{news.title}</p>
-                    <p className="text-[10px] text-slate-400 font-black mt-2 uppercase tracking-widest">Dev.to • {news.user.name}</p>
+              <p className="text-sm text-slate-500 mb-6">Fresh articles and trends curated from Dev.to.</p>
+
+              <div className="space-y-4">
+                {techNews.slice(0, 6).map((news, i) => (
+                  <a
+                    key={i}
+                    href={news.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group block rounded-2xl border border-slate-200 bg-slate-50 p-4 hover:bg-white hover:border-blue-200 hover:shadow-sm transition-all"
+                  >
+                    {news.cover_image || news.social_image ? (
+                      <img
+                        src={news.cover_image || news.social_image}
+                        alt={news.title}
+                        className="mb-3 h-28 w-full rounded-xl object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="mb-3 h-28 w-full rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center">
+                        <span className="text-xs font-bold uppercase tracking-wider text-blue-700">Tech Insight</span>
+                      </div>
+                    )}
+
+                    <p className="text-sm font-bold text-slate-800 line-clamp-2 group-hover:text-blue-600 transition-colors">
+                      {news.title}
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500 line-clamp-2">
+                      {news.description || 'Read the full article for practical insights and trends.'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-black mt-3 uppercase tracking-widest">
+                      Dev.to • {news?.user?.name || 'Technology'}
+                    </p>
                   </a>
                 ))}
               </div>
             </section>
-
-            <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl shadow-slate-300 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-1000"></div>
-              <h3 className="text-xl font-black text-white mb-3">Expert Support</h3>
-              <p className="text-slate-400 text-sm mb-6 font-medium">Get direct access to our tech team for your enterprise needs.</p>
-              <button className="w-full py-4 bg-white text-slate-900 font-black rounded-xl text-sm hover:bg-blue-500 hover:text-white transition-all shadow-lg">Contact Us</button>
-            </div>
           </div>
         </div>
 
         {/* Services Section with Distinct Background */}
-        <section className="bg-slate-900 rounded-[3rem] p-10 md:p-14 text-white shadow-2xl">
+        <section className="bg-white border-2 border-slate-200 rounded-[3rem] p-10 md:p-14 text-slate-900 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
             <div>
               <h2 className="text-3xl font-black mb-2">Our Specializations</h2>
-              <p className="text-slate-400 font-medium">Explore premium tech services tailored for you.</p>
+              <p className="text-slate-500 font-medium">Explore premium tech services tailored for you.</p>
             </div>
-            <button onClick={() => handleNavigate('services')} className="px-6 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-sm font-bold transition-all">View Full Catalog</button>
+            <button onClick={() => handleNavigate('services')} className="px-6 py-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-sm font-bold text-blue-700 transition-all">View Full Catalog</button>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {services.slice(0, 3).map((s) => (
-              <div key={s.id} className="bg-white/5 border border-white/10 rounded-3xl p-8 hover:bg-white/10 transition-all group">
-                <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform duration-500">
+              <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-3xl p-8 hover:bg-white hover:shadow-lg transition-all group">
+                <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform duration-500">
                   ⚡
                 </div>
                 <h4 className="font-black text-xl mb-3">{s.title}</h4>
-                <p className="text-slate-400 text-sm mb-8 line-clamp-2 leading-relaxed">{s.description}</p>
-                <div className="flex items-center justify-between pt-6 border-t border-white/10">
+                <p className="text-slate-500 text-sm mb-8 line-clamp-2 leading-relaxed">{s.description}</p>
+                <div className="flex items-center justify-between pt-6 border-t border-slate-200">
                   <span className="text-2xl font-black text-blue-400">{s.price}</span>
-                  <button onClick={() => handleNavigate('newbooking', s.title)} className="p-4 bg-blue-600 rounded-2xl hover:bg-white hover:text-blue-600 transition-all">
+                  <button onClick={() => handleNavigate('newbooking', s.title)} className="p-4 bg-blue-600 rounded-2xl text-white hover:bg-slate-900 transition-all">
                     <FaSync className="text-xs" />
                   </button>
                 </div>
