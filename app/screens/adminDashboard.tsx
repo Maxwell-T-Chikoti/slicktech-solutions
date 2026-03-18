@@ -111,6 +111,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [loadingManagedStaff, setLoadingManagedStaff] = useState(false);
   const [staffActionInProgressId, setStaffActionInProgressId] = useState<string | null>(null);
   const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({});
+  const [staffNameDrafts, setStaffNameDrafts] = useState<Record<string, { firstName: string; surname: string }>>({});
   const [selectedStaffDetails, setSelectedStaffDetails] = useState<ManagedStaffAccount | null>(null);
   const [activityLog, setActivityLog] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -342,7 +343,20 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         throw new Error(json?.error || 'Failed to fetch staff accounts.');
       }
 
-      setManagedStaff((json?.staff || []) as ManagedStaffAccount[]);
+      const staffList = (json?.staff || []) as ManagedStaffAccount[];
+      setManagedStaff(staffList);
+      setStaffNameDrafts((prev) => {
+        const next = { ...prev };
+        staffList.forEach((staff) => {
+          if (!next[staff.id]) {
+            next[staff.id] = {
+              firstName: staff.first_name || '',
+              surname: staff.surname || '',
+            };
+          }
+        });
+        return next;
+      });
     } catch (error: any) {
       addNotification(error?.message || 'Could not load staff accounts.', 'error');
     } finally {
@@ -352,12 +366,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   const updateStaffAccount = async (
     staff: ManagedStaffAccount,
-    action: 'disable' | 'enable' | 'reset-password'
+    action: 'disable' | 'enable' | 'reset-password' | 'update-name'
   ) => {
     const draftPassword = (staffPasswordDrafts[staff.id] || '').trim();
+    const draftName = staffNameDrafts[staff.id] || { firstName: staff.first_name || '', surname: staff.surname || '' };
     if (action === 'reset-password' && draftPassword.length < 8) {
       showAlertDialog('Please enter a new password with at least 8 characters.', 'Invalid password');
       return;
+    }
+
+    if (action === 'update-name') {
+      const firstName = draftName.firstName.trim();
+      const surname = draftName.surname.trim();
+      if (!firstName || !surname) {
+        showAlertDialog('Please provide both first name and surname before saving.', 'Missing name');
+        return;
+      }
     }
 
     setStaffActionInProgressId(staff.id);
@@ -373,6 +397,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           staffId: staff.id,
           action,
           newPassword: action === 'reset-password' ? draftPassword : undefined,
+          firstName: action === 'update-name' ? draftName.firstName.trim() : undefined,
+          surname: action === 'update-name' ? draftName.surname.trim() : undefined,
         }),
       });
 
@@ -390,6 +416,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           ? `Disabled ${staff.first_name} ${staff.surname}`
           : action === 'enable'
           ? `Enabled ${staff.first_name} ${staff.surname}`
+          : action === 'update-name'
+          ? `Updated staff name to ${draftName.firstName.trim()} ${draftName.surname.trim()}`
           : `Password reset for ${staff.first_name} ${staff.surname}`,
         'success'
       );
@@ -398,6 +426,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           ? `Disabled staff account ${staff.email}`
           : action === 'enable'
           ? `Enabled staff account ${staff.email}`
+          : action === 'update-name'
+          ? `Updated staff name for ${staff.email}`
           : `Reset password for staff account ${staff.email}`
       );
       fetchManagedStaff();
@@ -2634,6 +2664,49 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${staff.isDisabled ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                             {staff.isDisabled ? 'Disabled' : 'Enabled'}
                           </span>
+                        </div>
+
+                        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Staff Name</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="First name"
+                              value={(staffNameDrafts[staff.id]?.firstName ?? staff.first_name) || ''}
+                              onChange={(e) =>
+                                setStaffNameDrafts((prev) => ({
+                                  ...prev,
+                                  [staff.id]: {
+                                    firstName: e.target.value,
+                                    surname: prev[staff.id]?.surname ?? staff.surname ?? '',
+                                  },
+                                }))
+                              }
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Surname"
+                              value={(staffNameDrafts[staff.id]?.surname ?? staff.surname) || ''}
+                              onChange={(e) =>
+                                setStaffNameDrafts((prev) => ({
+                                  ...prev,
+                                  [staff.id]: {
+                                    firstName: prev[staff.id]?.firstName ?? staff.first_name ?? '',
+                                    surname: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <button
+                            onClick={() => updateStaffAccount(staff, 'update-name')}
+                            disabled={staffActionInProgressId === staff.id}
+                            className="mt-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900 disabled:bg-slate-400"
+                          >
+                            Save Name
+                          </button>
                         </div>
 
                         <div className="space-y-1 text-sm text-slate-600">

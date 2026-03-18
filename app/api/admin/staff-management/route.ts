@@ -3,8 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 
 type StaffActionBody = {
   staffId?: string;
-  action?: 'disable' | 'enable' | 'reset-password';
+  action?: 'disable' | 'enable' | 'reset-password' | 'update-name';
   newPassword?: string;
+  firstName?: string;
+  surname?: string;
 };
 
 const LONG_BAN_DURATION = '876000h'; // ~100 years
@@ -140,6 +142,38 @@ export async function PATCH(req: NextRequest) {
 
       if (error) {
         return NextResponse.json({ error: error.message || 'Failed to reset staff password.' }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, action });
+    }
+
+    if (action === 'update-name') {
+      const firstName = (body.firstName || '').trim();
+      const surname = (body.surname || '').trim();
+
+      if (!firstName || !surname) {
+        return NextResponse.json({ error: 'firstName and surname are required.' }, { status: 400 });
+      }
+
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .update({ first_name: firstName, surname })
+        .eq('id', staffId);
+
+      if (profileError) {
+        return NextResponse.json({ error: profileError.message || 'Failed to update staff profile name.' }, { status: 500 });
+      }
+
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(staffId, {
+        user_metadata: {
+          first_name: firstName,
+          surname,
+          role: 'staff',
+        },
+      });
+
+      if (authError) {
+        return NextResponse.json({ error: authError.message || 'Updated profile name, but failed to sync auth metadata.' }, { status: 500 });
       }
 
       return NextResponse.json({ success: true, action });
