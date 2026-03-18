@@ -193,6 +193,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   // availability / blocked dates
   const [blockedDates, setBlockedDates] = useState<any[]>([]);
   const [newBlockedDate, setNewBlockedDate] = useState<string>('');
+  const [newBlockedEndDate, setNewBlockedEndDate] = useState<string>('');
   const [newBlockedReason, setNewBlockedReason] = useState<string>('');
   const [serviceRatings, setServiceRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [aiDemandForecast, setAiDemandForecast] = useState<DemandForecastRow[] | null>(null);
@@ -304,14 +305,48 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   const addBlockedDate = async () => {
     if (!newBlockedDate) return;
+
+    const start = new Date(`${newBlockedDate}T00:00:00`);
+    const endValue = newBlockedEndDate || newBlockedDate;
+    const end = new Date(`${endValue}T00:00:00`);
+
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      addNotification('Please select a valid start and end date.', 'error');
+      return;
+    }
+
+    if (end < start) {
+      addNotification('End date must be the same as or after the start date.', 'warning');
+      return;
+    }
+
+    const rangeDates: string[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      rangeDates.push(cursor.toISOString().split('T')[0]);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const alreadyBlocked = new Set((blockedDates || []).map((d: any) => String(d.date)));
+    const rowsToInsert = rangeDates
+      .filter((date) => !alreadyBlocked.has(date))
+      .map((date) => ({ date, reason: newBlockedReason.trim() }));
+
+    if (rowsToInsert.length === 0) {
+      addNotification('All dates in the selected range are already blocked.', 'info');
+      return;
+    }
+
     const { error } = await supabase
       .from('blocked_dates')
-      .insert([{ date: newBlockedDate, reason: newBlockedReason.trim() }]);
+      .insert(rowsToInsert);
     if (error) {
       addNotification('Could not block date (already blocked or permission denied)', 'error');
     } else {
-      addNotification(`${newBlockedDate} blocked successfully`, 'success');
+      const rangeLabel = newBlockedEndDate ? `${newBlockedDate} to ${newBlockedEndDate}` : newBlockedDate;
+      addNotification(`Blocked ${rowsToInsert.length} date${rowsToInsert.length === 1 ? '' : 's'} (${rangeLabel})`, 'success');
       setNewBlockedDate('');
+      setNewBlockedEndDate('');
       setNewBlockedReason('');
       fetchBlockedDates();
     }
@@ -3636,32 +3671,40 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 {/* ─── Availability / Blocked Dates ─── */}
                 <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
                   <h3 className="text-xl font-semibold mb-1 text-black">Availability Management</h3>
-                  <p className="text-sm text-slate-500 mb-5">Block specific dates so customers cannot book on those days.</p>
+                  <p className="text-sm text-slate-500 mb-5">Block a single date or a full date range so customers cannot book on those days.</p>
 
                   {/* Add date form */}
-                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                     <input
                       type="date"
                       value={newBlockedDate}
                       min={new Date().toISOString().split('T')[0]}
                       onChange={(e) => setNewBlockedDate(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    />
+                    <input
+                      type="date"
+                      value={newBlockedEndDate}
+                      min={newBlockedDate || new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setNewBlockedEndDate(e.target.value)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                     />
                     <input
                       type="text"
                       placeholder="Reason (optional, e.g. Public holiday)"
                       value={newBlockedReason}
                       onChange={(e) => setNewBlockedReason(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-400"
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-400 lg:col-span-1"
                     />
                     <button
                       onClick={addBlockedDate}
                       disabled={!newBlockedDate}
                       className="px-6 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white rounded-lg font-semibold whitespace-nowrap transition"
                     >
-                      Block Date
+                      Block Date(s)
                     </button>
                   </div>
+                  <p className="-mt-3 mb-5 text-xs text-slate-500">Start date is required. End date is optional (leave blank to block one day).</p>
 
                   {/* Blocked dates list */}
                   {blockedDates.length === 0 ? (
