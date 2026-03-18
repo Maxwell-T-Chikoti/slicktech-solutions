@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars } from 'react-icons/fa';
@@ -35,6 +35,7 @@ interface BookingWithProfile {
   staff_completion_report?: string | null;
   staff_completed_at?: string | null;
   location?: string;
+  service_price?: string;
 }
 
 type StaffMember = {
@@ -53,6 +54,23 @@ type ManagedStaffAccount = {
   location?: string;
   isDisabled: boolean;
   bannedUntil?: string | null;
+};
+
+type StaffPerformanceSummary = {
+  assignedCount: number;
+  completedCount: number;
+  activeCount: number;
+  pendingCount: number;
+  rejectedCount: number;
+  acknowledgedCount: number;
+  notesCount: number;
+  completionRate: number;
+  totalRevenueCAD: number;
+  averageCompletedValueCAD: number;
+  topService: string;
+  lastCompletedAt: string | null;
+  jobs: BookingWithProfile[];
+  completedJobs: BookingWithProfile[];
 };
 
 const AI_DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -93,6 +111,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [loadingManagedStaff, setLoadingManagedStaff] = useState(false);
   const [staffActionInProgressId, setStaffActionInProgressId] = useState<string | null>(null);
   const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({});
+  const [selectedStaffDetails, setSelectedStaffDetails] = useState<ManagedStaffAccount | null>(null);
   const [activityLog, setActivityLog] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [serviceFilter, setServiceFilter] = useState<string>('all');
@@ -1114,6 +1133,94 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     return matchesSearch && matchesStatus && matchesService && matchesDateRange;
   });
+
+  const formatCAD = (amount: number) =>
+    new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(amount || 0);
+
+  const getBookingTimestamp = (booking: BookingWithProfile) => {
+    if (booking.staff_completed_at) {
+      const doneTime = new Date(booking.staff_completed_at).getTime();
+      if (!Number.isNaN(doneTime)) return doneTime;
+    }
+
+    const bookingTime = new Date(booking.date).getTime();
+    return Number.isNaN(bookingTime) ? 0 : bookingTime;
+  };
+
+  const staffPerformanceById = useMemo<Record<string, StaffPerformanceSummary>>(() => {
+    const map: Record<string, StaffPerformanceSummary> = {};
+
+    const ensure = (staffId: string) => {
+      if (!map[staffId]) {
+        map[staffId] = {
+          assignedCount: 0,
+          completedCount: 0,
+          activeCount: 0,
+          pendingCount: 0,
+          rejectedCount: 0,
+          acknowledgedCount: 0,
+          notesCount: 0,
+          completionRate: 0,
+          totalRevenueCAD: 0,
+          averageCompletedValueCAD: 0,
+          topService: 'N/A',
+          lastCompletedAt: null,
+          jobs: [],
+          completedJobs: [],
+        };
+      }
+
+      return map[staffId];
+    };
+
+    managedStaff.forEach((staff) => ensure(staff.id));
+
+    bookings.forEach((booking) => {
+      const staffId = booking.assigned_staff_id || '';
+      if (!staffId) return;
+
+      const summary = ensure(staffId);
+      summary.assignedCount += 1;
+      summary.jobs.push(booking);
+
+      if (booking.staff_acknowledged_at) summary.acknowledgedCount += 1;
+      if (booking.staff_notes) summary.notesCount += 1;
+
+      if (booking.status === 'Complete') {
+        summary.completedCount += 1;
+        summary.completedJobs.push(booking);
+        const amount = parseFloat(String(booking.service_price || booking.price || '').replace(/[^0-9.]/g, '') || '0');
+        summary.totalRevenueCAD += Number.isNaN(amount) ? 0 : amount;
+      } else if (booking.status === 'Rejected') {
+        summary.rejectedCount += 1;
+      } else if (booking.status === 'Pending') {
+        summary.pendingCount += 1;
+      }
+    });
+
+    Object.values(map).forEach((summary) => {
+      summary.activeCount = summary.assignedCount - summary.completedCount - summary.rejectedCount;
+      summary.completionRate = summary.assignedCount
+        ? Math.round((summary.completedCount / summary.assignedCount) * 100)
+        : 0;
+      summary.averageCompletedValueCAD = summary.completedCount
+        ? summary.totalRevenueCAD / summary.completedCount
+        : 0;
+
+      const serviceFreq = summary.jobs.reduce((acc, job) => {
+        acc[job.service] = (acc[job.service] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const topService = Object.entries(serviceFreq).sort((a, b) => b[1] - a[1])[0];
+      summary.topService = topService?.[0] || 'N/A';
+
+      summary.completedJobs.sort((a, b) => getBookingTimestamp(b) - getBookingTimestamp(a));
+      summary.jobs.sort((a, b) => getBookingTimestamp(b) - getBookingTimestamp(a));
+      summary.lastCompletedAt = summary.completedJobs[0]?.staff_completed_at || null;
+    });
+
+    return map;
+  }, [bookings, managedStaff]);
 
   const aiDemandInsights = React.useMemo(() => {
     const dayCounts: Record<string, number> = {
@@ -2499,7 +2606,25 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">No staff accounts found.</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {managedStaff.map((staff) => (
+                    {managedStaff.map((staff) => {
+                      const staffSummary = staffPerformanceById[staff.id] || {
+                        assignedCount: 0,
+                        completedCount: 0,
+                        activeCount: 0,
+                        pendingCount: 0,
+                        rejectedCount: 0,
+                        acknowledgedCount: 0,
+                        notesCount: 0,
+                        completionRate: 0,
+                        totalRevenueCAD: 0,
+                        averageCompletedValueCAD: 0,
+                        topService: 'N/A',
+                        lastCompletedAt: null,
+                        jobs: [],
+                        completedJobs: [],
+                      } as StaffPerformanceSummary;
+
+                      return (
                       <div key={staff.id} className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
                         <div className="mb-4 flex items-center justify-between">
                           <div>
@@ -2515,6 +2640,28 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <p>Phone: {staff.phone || 'Not provided'}</p>
                           <p>Location: {staff.location || 'Not provided'}</p>
                         </div>
+
+                        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                          <div className="rounded-lg bg-slate-100 px-2 py-2">
+                            <p className="text-xs text-slate-500">Assigned</p>
+                            <p className="text-lg font-bold text-slate-900">{staffSummary.assignedCount}</p>
+                          </div>
+                          <div className="rounded-lg bg-emerald-100 px-2 py-2">
+                            <p className="text-xs text-emerald-700">Completed</p>
+                            <p className="text-lg font-bold text-emerald-800">{staffSummary.completedCount}</p>
+                          </div>
+                          <div className="rounded-lg bg-amber-100 px-2 py-2">
+                            <p className="text-xs text-amber-700">Active</p>
+                            <p className="text-lg font-bold text-amber-800">{staffSummary.activeCount}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setSelectedStaffDetails(staff)}
+                          className="mt-4 w-full rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                        >
+                          View Detailed Performance
+                        </button>
 
                         <div className="mt-4 flex flex-wrap gap-2">
                           {staff.isDisabled ? (
@@ -2583,7 +2730,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           </div>
                         </div>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 )}
 
@@ -2644,6 +2791,145 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     {creatingStaff ? 'Creating Staff...' : 'Create Staff Account'}
                   </button>
                 </div>
+
+                {selectedStaffDetails && (() => {
+                  const summary = staffPerformanceById[selectedStaffDetails.id] || {
+                    assignedCount: 0,
+                    completedCount: 0,
+                    activeCount: 0,
+                    pendingCount: 0,
+                    rejectedCount: 0,
+                    acknowledgedCount: 0,
+                    notesCount: 0,
+                    completionRate: 0,
+                    totalRevenueCAD: 0,
+                    averageCompletedValueCAD: 0,
+                    topService: 'N/A',
+                    lastCompletedAt: null,
+                    jobs: [],
+                    completedJobs: [],
+                  } as StaffPerformanceSummary;
+
+                  return (
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-4 flex items-center justify-center">
+                      <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white border border-gray-200 shadow-2xl">
+                        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
+                          <div>
+                            <h3 className="text-xl font-bold text-slate-900">{selectedStaffDetails.first_name} {selectedStaffDetails.surname}</h3>
+                            <p className="text-sm text-slate-600">{selectedStaffDetails.email}</p>
+                          </div>
+                          <button
+                            onClick={() => setSelectedStaffDetails(null)}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="rounded-xl bg-slate-100 p-4">
+                              <p className="text-xs text-slate-500">Assigned Jobs</p>
+                              <p className="text-2xl font-bold text-slate-900">{summary.assignedCount}</p>
+                            </div>
+                            <div className="rounded-xl bg-emerald-100 p-4">
+                              <p className="text-xs text-emerald-700">Completed Jobs</p>
+                              <p className="text-2xl font-bold text-emerald-800">{summary.completedCount}</p>
+                            </div>
+                            <div className="rounded-xl bg-blue-100 p-4">
+                              <p className="text-xs text-blue-700">Completion Rate</p>
+                              <p className="text-2xl font-bold text-blue-800">{summary.completionRate}%</p>
+                            </div>
+                            <div className="rounded-xl bg-purple-100 p-4">
+                              <p className="text-xs text-purple-700">Completed Revenue</p>
+                              <p className="text-2xl font-bold text-purple-800">{formatCAD(summary.totalRevenueCAD)}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div className="rounded-xl border border-gray-200 p-4">
+                              <p className="text-slate-500">Active Jobs</p>
+                              <p className="mt-1 font-semibold text-slate-900">{summary.activeCount}</p>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 p-4">
+                              <p className="text-slate-500">Average Completed Job Value</p>
+                              <p className="mt-1 font-semibold text-slate-900">{formatCAD(summary.averageCompletedValueCAD)}</p>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 p-4">
+                              <p className="text-slate-500">Top Service</p>
+                              <p className="mt-1 font-semibold text-slate-900">{summary.topService}</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div className="rounded-xl border border-gray-200 p-4">
+                              <p className="text-slate-500">Acknowledged Jobs</p>
+                              <p className="mt-1 font-semibold text-slate-900">{summary.acknowledgedCount}</p>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 p-4">
+                              <p className="text-slate-500">Jobs With Notes</p>
+                              <p className="mt-1 font-semibold text-slate-900">{summary.notesCount}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className="text-lg font-bold text-slate-900 mb-3">Recent Completed Jobs</h4>
+                            {summary.completedJobs.length === 0 ? (
+                              <p className="rounded-xl border border-gray-200 bg-slate-50 p-4 text-sm text-slate-600">No completed jobs recorded yet.</p>
+                            ) : (
+                              <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-slate-100 text-slate-700">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left">Service</th>
+                                      <th className="px-3 py-2 text-left">Customer</th>
+                                      <th className="px-3 py-2 text-left">Date</th>
+                                      <th className="px-3 py-2 text-left">Value</th>
+                                      <th className="px-3 py-2 text-left">Report</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {summary.completedJobs.slice(0, 10).map((job) => (
+                                      <tr key={job.id} className="border-t border-gray-100">
+                                        <td className="px-3 py-2 font-semibold text-slate-900">{job.service}</td>
+                                        <td className="px-3 py-2 text-slate-700">{job.user_name || 'Unknown'}</td>
+                                        <td className="px-3 py-2 text-slate-700">{job.staff_completed_at ? new Date(job.staff_completed_at).toLocaleString() : `${job.date} ${job.time}`}</td>
+                                        <td className="px-3 py-2 text-slate-700">{formatCAD(parseFloat(String(job.service_price || job.price || '').replace(/[^0-9.]/g, '') || '0'))}</td>
+                                        <td className="px-3 py-2 text-slate-700">{job.staff_completion_report ? 'Submitted' : 'No report'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <h4 className="text-lg font-bold text-slate-900 mb-3">Current Assigned Jobs</h4>
+                            {summary.jobs.filter((job) => job.status !== 'Complete' && job.status !== 'Rejected').length === 0 ? (
+                              <p className="rounded-xl border border-gray-200 bg-slate-50 p-4 text-sm text-slate-600">No active assigned jobs at the moment.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {summary.jobs
+                                  .filter((job) => job.status !== 'Complete' && job.status !== 'Rejected')
+                                  .slice(0, 8)
+                                  .map((job) => (
+                                    <div key={job.id} className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                                      <div>
+                                        <p className="font-semibold text-slate-900">#{job.id} {job.service}</p>
+                                        <p className="text-xs text-slate-600">{job.date} at {job.time} • {job.user_name || 'Unknown customer'}</p>
+                                      </div>
+                                      <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">{job.status}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
