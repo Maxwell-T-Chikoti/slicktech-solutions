@@ -375,30 +375,30 @@ const HomePage = () => {
               </div>
             </AnimatedSection>
 
-            {['Services', 'Company', 'Get Started'].map((section, idx) => (
+            {['Company', 'Services', 'Get Started'].map((section, idx) => (
               <AnimatedSection key={idx} delay={100 * (idx + 1)}>
                 <div>
                   <h3 className="font-semibold mb-4 text-white">{section}</h3>
                   <ul className="space-y-2 text-slate-400">
                     {section === 'Services' && (
                       <>
-                        <li className="hover:text-white transition-colors cursor-pointer">IT Support</li>
-                        <li className="hover:text-white transition-colors cursor-pointer">Cloud Solutions</li>
-                        <li className="hover:text-white transition-colors cursor-pointer">Cybersecurity</li>
+                        <li><Link href="/services/it-support" className="hover:text-white transition-colors">IT Support</Link></li>
+                        <li><Link href="/services/cloud-solutions" className="hover:text-white transition-colors">Cloud Solutions</Link></li>
+                        <li><Link href="/services/cybersecurity" className="hover:text-white transition-colors">Cybersecurity</Link></li>
                       </>
                     )}
                     {section === 'Company' && (
                       <>
                         <li><Link href="/" className="hover:text-white transition-colors">Home</Link></li>
                         <li><Link href="/about" className="hover:text-white transition-colors">About Us</Link></li>
-                        <li className="hover:text-white transition-colors cursor-pointer">Contact</li>
+                        <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
                       </>
                     )}
                     {section === 'Get Started' && (
                       <>
-                        <li><Link href="/booking" className="hover:text-white transition-colors">Book a Service</Link></li>
-                        <li className="hover:text-white transition-colors cursor-pointer">Support</li>
-                        <li className="hover:text-white transition-colors cursor-pointer">Documentation</li>
+                        <li><Link href="/services" className="hover:text-white transition-colors">Explore Services</Link></li>
+                        <li><Link href="/support" className="hover:text-white transition-colors">Support</Link></li>
+                        <li><Link href="/documentation" className="hover:text-white transition-colors">Documentation</Link></li>
                       </>
                     )}
                   </ul>
