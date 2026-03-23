@@ -18,6 +18,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Slicktech Solutions",
   description: "Professional IT and technology services",
+  icons: {
+    icon: [{ url: "/icon.png?v=2", type: "image/png" }],
+    shortcut: ["/icon.png?v=2"],
+    apple: [{ url: "/icon.png?v=2", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
