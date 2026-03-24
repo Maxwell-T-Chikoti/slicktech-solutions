@@ -109,6 +109,48 @@ type DemandModelSummary = {
   note: string;
 };
 
+type PromoCodeEntry = {
+  id: number;
+  code: string;
+  percentage_off: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+type StaffUnavailabilitySlot = {
+  id: number;
+  staff_id: string;
+  unavailable_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  note?: string | null;
+};
+
+type ChecklistTemplate = {
+  id: number;
+  service_name: string;
+  checklist_items: string[];
+};
+
+type BookingChecklistItem = {
+  id: number;
+  booking_id: number;
+  item_text: string;
+  item_order: number;
+  is_completed: boolean;
+  completed_at?: string | null;
+};
+
+type BookingStaffChatMessage = {
+  id: number;
+  booking_id: number;
+  sender_id: string;
+  sender_role: 'admin' | 'staff';
+  message: string;
+  created_at: string;
+};
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
@@ -186,6 +228,21 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newServiceImageFile, setNewServiceImageFile] = useState<File | null>(null);
   const [newServiceImagePreview, setNewServiceImagePreview] = useState<string>('');
   const serviceImageInputRef = useRef<HTMLInputElement>(null);
+  const [promoCodes, setPromoCodes] = useState<PromoCodeEntry[]>([]);
+  const [loadingPromoCodes, setLoadingPromoCodes] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoPercentage, setNewPromoPercentage] = useState('');
+  const [promoFormErrors, setPromoFormErrors] = useState<Partial<Record<'code' | 'percentage', string>>>({});
+  const [staffUnavailability, setStaffUnavailability] = useState<StaffUnavailabilitySlot[]>([]);
+  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
+  const [newTemplateServiceName, setNewTemplateServiceName] = useState('');
+  const [newTemplateItemsInput, setNewTemplateItemsInput] = useState('');
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [bookingChecklistItems, setBookingChecklistItems] = useState<BookingChecklistItem[]>([]);
+  const [bookingChatMessages, setBookingChatMessages] = useState<BookingStaffChatMessage[]>([]);
+  const [adminChatDraft, setAdminChatDraft] = useState('');
+  const [sendingAdminChat, setSendingAdminChat] = useState(false);
+  const adminChatMessagesRef = useRef<HTMLDivElement>(null);
   // customer messaging
   const [customMessage, setCustomMessage] = useState<string>('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -606,6 +663,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     setAssigningStaff(true);
     try {
       const assignId = staffToAssign || null;
+
+      if (assignId && isStaffUnavailableForBooking(assignId, selectedBooking)) {
+        showAlertDialog('Selected staff is marked unavailable for this booking date/time. Choose another staff member.', 'Staff unavailable');
+        return;
+      }
+
       const { error } = await supabase
         .from('bookings')
         .update({ assigned_staff_id: assignId })
@@ -899,6 +962,9 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       fetchBlockedDates();
       fetchStaffMembers();
       fetchManagedStaff();
+      fetchPromoCodes();
+      fetchStaffUnavailability();
+      fetchChecklistTemplates();
       fetchActivityLogs();
       logActivity('Admin logged in', { category: 'auth', source: 'admin-dashboard' });
 
@@ -1124,6 +1190,27 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     );
   };
 
+  const uploadServiceImage = async (file: File) => {
+    const token = await getAdminAccessToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch('/api/admin/service-images', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error || 'Failed to upload image.');
+    }
+
+    return String(payload?.url || '');
+  };
+
   // Service management
   const addService = async () => {
     const trimmedTitle = newServiceTitle.trim();
@@ -1167,19 +1254,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       // Upload image if one was selected
       let imageUrl: string | undefined = editingService?.image_url ?? undefined;
       if (newServiceImageFile) {
-        const ext = newServiceImageFile.name.split('.').pop() ?? 'jpg';
-        const path = `services/${Date.now()}.${ext}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('service-images')
-          .upload(path, newServiceImageFile, { upsert: true });
-        if (uploadError) {
-          // Surface storage errors clearly (bucket may not exist yet)
-          const storageMsg: string = uploadError.message || JSON.stringify(uploadError);
-          addNotification(`Image upload failed: ${storageMsg}. Service will be saved without image.`, 'warning');
-          imageUrl = editingService?.image_url ?? undefined;
-        } else {
-          const { data: urlData } = supabase.storage.from('service-images').getPublicUrl(uploadData.path);
-          imageUrl = urlData.publicUrl;
+        try {
+          imageUrl = await uploadServiceImage(newServiceImageFile);
+        } catch (uploadErr: any) {
+          addNotification(`Image upload failed: ${uploadErr?.message || 'Unknown error'}`, 'error');
+          return;
         }
       }
 
@@ -1265,6 +1344,327 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         addNotification(`Failed to delete service: ${(err as any)?.message || 'Unknown error'}`, 'error');
       }
     }, 'Delete service', 'Delete');
+  };
+
+  const fetchPromoCodes = async () => {
+    setLoadingPromoCodes(true);
+    try {
+      const token = await getAdminAccessToken();
+      const response = await fetch('/api/admin/promo-codes', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to load promo codes.');
+      }
+
+      setPromoCodes((payload?.promoCodes || []) as PromoCodeEntry[]);
+    } catch (error: any) {
+      addNotification(error?.message || 'Could not load promo codes.', 'error');
+    } finally {
+      setLoadingPromoCodes(false);
+    }
+  };
+
+  const createPromoCode = async () => {
+    const code = newPromoCode.trim().toUpperCase();
+    const percentage = Number(newPromoPercentage);
+    const nextErrors: Partial<Record<'code' | 'percentage', string>> = {};
+
+    if (!code) {
+      nextErrors.code = 'Promo code is required.';
+    } else if (!/^[A-Z0-9_-]{3,20}$/.test(code)) {
+      nextErrors.code = 'Use 3-20 chars: letters, numbers, hyphen, underscore.';
+    }
+
+    if (Number.isNaN(percentage) || percentage <= 0 || percentage > 100) {
+      nextErrors.percentage = 'Enter a number from 1 to 100.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setPromoFormErrors(nextErrors);
+      return;
+    }
+
+    setPromoFormErrors({});
+
+    try {
+      const token = await getAdminAccessToken();
+      const response = await fetch('/api/admin/promo-codes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          code,
+          percentageOff: percentage,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to create promo code.');
+      }
+
+      setNewPromoCode('');
+      setNewPromoPercentage('');
+      addNotification(`Promo code ${code} created.`, 'success');
+      logActivity(`Created promo code ${code}`, {
+        category: 'pricing',
+        source: 'admin-dashboard',
+        targetType: 'promo_code',
+        targetId: payload?.promoCode?.id,
+        metadata: { code, percentageOff: percentage },
+      });
+      fetchPromoCodes();
+    } catch (error: any) {
+      addNotification(error?.message || 'Could not create promo code.', 'error');
+    }
+  };
+
+  const togglePromoCode = async (promo: PromoCodeEntry, nextActive: boolean) => {
+    try {
+      const token = await getAdminAccessToken();
+      const response = await fetch('/api/admin/promo-codes', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          id: promo.id,
+          isActive: nextActive,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to update promo code status.');
+      }
+
+      addNotification(`Promo code ${promo.code} ${nextActive ? 'activated' : 'disabled'}.`, 'success');
+      logActivity(`${nextActive ? 'Activated' : 'Disabled'} promo code ${promo.code}`, {
+        category: 'pricing',
+        source: 'admin-dashboard',
+        targetType: 'promo_code',
+        targetId: promo.id,
+        metadata: { code: promo.code, isActive: nextActive },
+      });
+      fetchPromoCodes();
+    } catch (error: any) {
+      addNotification(error?.message || 'Could not update promo code.', 'error');
+    }
+  };
+
+  const deletePromoCode = async (promo: PromoCodeEntry) => {
+    showConfirmDialog(
+      `Delete promo code ${promo.code}? This cannot be undone.`,
+      async () => {
+        try {
+          const token = await getAdminAccessToken();
+          const response = await fetch(`/api/admin/promo-codes?id=${encodeURIComponent(String(promo.id))}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload?.error || 'Failed to delete promo code.');
+          }
+
+          addNotification(`Promo code ${promo.code} deleted.`, 'success');
+          logActivity(`Deleted promo code ${promo.code}`, {
+            category: 'pricing',
+            source: 'admin-dashboard',
+            targetType: 'promo_code',
+            targetId: promo.id,
+            metadata: { code: promo.code },
+          });
+          fetchPromoCodes();
+        } catch (error: any) {
+          addNotification(error?.message || 'Could not delete promo code.', 'error');
+        }
+      },
+      'Delete promo code',
+      'Delete'
+    );
+  };
+
+  const fetchStaffUnavailability = async () => {
+    const { data, error: availabilityError } = await supabase
+      .from('staff_unavailability')
+      .select('id, staff_id, unavailable_date, start_time, end_time, note')
+      .order('unavailable_date', { ascending: true });
+
+    if (availabilityError) {
+      return;
+    }
+
+    setStaffUnavailability((data || []) as StaffUnavailabilitySlot[]);
+  };
+
+  const fetchChecklistTemplates = async () => {
+    const { data, error: templateError } = await supabase
+      .from('checklist_templates')
+      .select('id, service_name, checklist_items')
+      .order('service_name', { ascending: true });
+
+    if (templateError) {
+      return;
+    }
+
+    setChecklistTemplates(
+      (data || []).map((row: any) => ({
+        id: row.id,
+        service_name: row.service_name,
+        checklist_items: Array.isArray(row.checklist_items)
+          ? row.checklist_items.map((item: unknown) => String(item || '').trim()).filter((item: string) => !!item)
+          : [],
+      }))
+    );
+  };
+
+  const saveChecklistTemplate = async () => {
+    const serviceName = newTemplateServiceName.trim();
+    const checklistItems = newTemplateItemsInput
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => !!line);
+
+    if (!serviceName) {
+      addNotification('Checklist template service name is required.', 'warning');
+      return;
+    }
+
+    if (checklistItems.length === 0) {
+      addNotification('Add at least one checklist item.', 'warning');
+      return;
+    }
+
+    setTemplateSaving(true);
+    const existing = checklistTemplates.find(
+      (template) => template.service_name.trim().toLowerCase() === serviceName.toLowerCase()
+    );
+
+    const query = existing
+      ? supabase
+          .from('checklist_templates')
+          .update({ checklist_items: checklistItems })
+          .eq('id', existing.id)
+      : supabase.from('checklist_templates').insert([{ service_name: serviceName, checklist_items: checklistItems }]);
+
+    const { error: upsertError } = await query;
+
+    setTemplateSaving(false);
+
+    if (upsertError) {
+      addNotification(upsertError.message || 'Could not save checklist template.', 'error');
+      return;
+    }
+
+    setNewTemplateServiceName('');
+    setNewTemplateItemsInput('');
+    addNotification(`Checklist template saved for ${serviceName}.`, 'success');
+    fetchChecklistTemplates();
+  };
+
+  const fetchBookingChecklistItems = async (bookingId: number) => {
+    const { data, error: checklistError } = await supabase
+      .from('booking_checklist_items')
+      .select('id, booking_id, item_text, item_order, is_completed, completed_at')
+      .eq('booking_id', bookingId)
+      .order('item_order', { ascending: true });
+
+    if (checklistError) {
+      setBookingChecklistItems([]);
+      return;
+    }
+
+    let rows = (data || []) as BookingChecklistItem[];
+
+    if (rows.length === 0) {
+      const booking = bookings.find((row) => row.id === bookingId);
+      const template = checklistTemplates.find(
+        (row) => row.service_name.trim().toLowerCase() === String(booking?.service || '').trim().toLowerCase()
+      );
+
+      if (template && template.checklist_items.length > 0) {
+        const inserts = template.checklist_items.map((item, idx) => ({
+          booking_id: bookingId,
+          item_text: item,
+          item_order: idx,
+        }));
+
+        await supabase.from('booking_checklist_items').insert(inserts);
+
+        const { data: seeded } = await supabase
+          .from('booking_checklist_items')
+          .select('id, booking_id, item_text, item_order, is_completed, completed_at')
+          .eq('booking_id', bookingId)
+          .order('item_order', { ascending: true });
+
+        rows = (seeded || []) as BookingChecklistItem[];
+      }
+    }
+
+    setBookingChecklistItems(rows);
+  };
+
+  const fetchBookingChatMessages = async (bookingId: number) => {
+    const { data, error: chatError } = await supabase
+      .from('booking_staff_chat_messages')
+      .select('id, booking_id, sender_id, sender_role, message, created_at')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: true });
+
+    if (chatError) {
+      setBookingChatMessages([]);
+      return;
+    }
+
+    setBookingChatMessages((data || []) as BookingStaffChatMessage[]);
+  };
+
+  const sendAdminChatMessage = async () => {
+    if (!selectedBooking || !adminChatDraft.trim()) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      showAlertDialog('Your session expired. Please sign in again.', 'Chat failed');
+      return;
+    }
+
+    setSendingAdminChat(true);
+    const { error: insertError } = await supabase
+      .from('booking_staff_chat_messages')
+      .insert([
+        {
+          booking_id: selectedBooking.id,
+          sender_id: user.id,
+          sender_role: 'admin',
+          message: adminChatDraft.trim(),
+        },
+      ]);
+
+    setSendingAdminChat(false);
+
+    if (insertError) {
+      showAlertDialog(insertError.message || 'Could not send chat message.', 'Chat failed');
+      return;
+    }
+
+    setAdminChatDraft('');
+    fetchBookingChatMessages(selectedBooking.id);
   };
 
   // Activity logging
@@ -1416,6 +1816,55 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const formatCAD = (amount: number) =>
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(amount || 0);
 
+  const normalizeBookingDate = (rawDate: string) => {
+    const parsed = new Date(rawDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    const matched = String(rawDate || '').match(/(\d{4}-\d{2}-\d{2})/);
+    return matched ? matched[1] : String(rawDate || '');
+  };
+
+  const parseTimeToMinutes = (rawTime: string) => {
+    const value = String(rawTime || '').trim().toUpperCase();
+    const twelveHour = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+    if (twelveHour) {
+      let hour = Number(twelveHour[1]);
+      const minute = Number(twelveHour[2]);
+      const meridiem = twelveHour[3];
+      if (meridiem === 'PM' && hour < 12) hour += 12;
+      if (meridiem === 'AM' && hour === 12) hour = 0;
+      return hour * 60 + minute;
+    }
+
+    const twentyFour = value.match(/^(\d{1,2}):(\d{2})$/);
+    if (twentyFour) {
+      return Number(twentyFour[1]) * 60 + Number(twentyFour[2]);
+    }
+
+    return null;
+  };
+
+  const isStaffUnavailableForBooking = (staffId: string, booking: BookingWithProfile) => {
+    const bookingDate = normalizeBookingDate(booking.date);
+    const bookingTimeMinutes = parseTimeToMinutes(booking.time);
+
+    return staffUnavailability.some((slot) => {
+      if (slot.staff_id !== staffId || slot.unavailable_date !== bookingDate) return false;
+      if (!slot.start_time || !slot.end_time || bookingTimeMinutes == null) return true;
+
+      const startMinutes = parseTimeToMinutes(String(slot.start_time).slice(0, 5));
+      const endMinutes = parseTimeToMinutes(String(slot.end_time).slice(0, 5));
+      if (startMinutes == null || endMinutes == null) return true;
+
+      return bookingTimeMinutes >= startMinutes && bookingTimeMinutes < endMinutes;
+    });
+  };
+
   const getBookingTimestamp = (booking: BookingWithProfile) => {
     if (booking.staff_completed_at) {
       const doneTime = new Date(booking.staff_completed_at).getTime();
@@ -1522,6 +1971,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     let best: StaffRecommendation | null = null;
 
     staffMembers.forEach((staff) => {
+      if (isStaffUnavailableForBooking(staff.id, selectedBooking)) {
+        return;
+      }
+
       const summary = staffPerformanceById[staff.id] || {
         assignedCount: 0,
         completedCount: 0,
@@ -1577,7 +2030,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     });
 
     return best;
-  }, [selectedBooking, staffMembers, staffPerformanceById]);
+  }, [selectedBooking, staffMembers, staffPerformanceById, staffUnavailability]);
 
   const aiDemandInsights = React.useMemo(() => {
     const dayCounts: Record<string, number> = {
@@ -1726,10 +2179,69 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   useEffect(() => {
     if (!selectedBooking) {
       setStaffToAssign('');
+      setBookingChecklistItems([]);
+      setBookingChatMessages([]);
+      setAdminChatDraft('');
       return;
     }
+
     setStaffToAssign(selectedBooking.assigned_staff_id || '');
+    fetchBookingChecklistItems(selectedBooking.id);
+    fetchBookingChatMessages(selectedBooking.id);
   }, [selectedBooking]);
+
+  // Real-time chat subscription for admin
+  useEffect(() => {
+    if (!selectedBooking) return;
+
+    const channel = supabase
+      .channel(`admin-booking-chat-${selectedBooking.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'booking_staff_chat_messages',
+        filter: `booking_id=eq.${selectedBooking.id}`,
+      }, (payload) => {
+        const newMessage = payload.new as BookingStaffChatMessage;
+        
+        // Update chat state
+        setBookingChatMessages((prev) => [...prev, newMessage]);
+
+        // Show notification only if message is from staff
+        if (newMessage.sender_role === 'staff') {
+          addNotification(`New message from staff: "${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}"`, 'info');
+        }
+
+        // Auto-scroll to latest message
+        setTimeout(() => {
+          if (adminChatMessagesRef.current) {
+            adminChatMessagesRef.current.scrollTop = adminChatMessagesRef.current.scrollHeight;
+          }
+        }, 0);
+      })
+      .subscribe();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [selectedBooking?.id]);
+
+  // Auto-dismiss info notifications after 4 seconds
+  useEffect(() => {
+    const infoNotifications = notifications.filter(n => n.type === 'info');
+    if (infoNotifications.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const lastInfoNotif = infoNotifications[infoNotifications.length - 1];
+      if (lastInfoNotif) {
+        removeNotification(lastInfoNotif.id);
+      }
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [notifications]);
 
   const forecastRowsForDisplay = aiDemandForecast && aiDemandForecast.length > 0
     ? aiDemandForecast
@@ -2585,6 +3097,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 </>
               )}
             </div>
+
+            {/* Toast Notifications for Real-time Messages */}
+            {notifications.filter(n => n.type === 'info').length > 0 && (
+              <div className="fixed top-24 right-6 z-40 space-y-2 max-w-md">
+                {notifications.filter(n => n.type === 'info').map((notif) => (
+                  <div
+                    key={notif.id}
+                    className="bg-blue-100 border border-blue-300 text-blue-900 rounded-lg p-4 shadow-lg flex justify-between items-start"
+                  >
+                    <p className="text-sm font-medium">{notif.message}</p>
+                    <button
+                      onClick={() => removeNotification(notif.id)}
+                      className="ml-4 text-lg hover:opacity-75"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Main Content */}
             {activeTab === 'dashboard' && (
@@ -3668,6 +4200,146 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   )}
                 </div>
 
+                <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <h3 className="text-xl font-semibold mb-1 text-black">Promo Code Management</h3>
+                  <p className="text-sm text-slate-500 mb-5">Create percentage-off promo codes and control whether they are active for customers.</p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                    <input
+                      type="text"
+                      value={newPromoCode}
+                      onChange={(e) => {
+                        setNewPromoCode(e.target.value.toUpperCase());
+                        setPromoFormErrors((prev) => ({ ...prev, code: '' }));
+                      }}
+                      placeholder="Promo code (e.g. MAX50)"
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500 ${promoFormErrors.code ? 'border-red-400' : 'border-gray-300'}`}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={newPromoPercentage}
+                      onChange={(e) => {
+                        setNewPromoPercentage(e.target.value);
+                        setPromoFormErrors((prev) => ({ ...prev, percentage: '' }));
+                      }}
+                      placeholder="Percentage off (e.g. 20)"
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 placeholder-gray-500 ${promoFormErrors.percentage ? 'border-red-400' : 'border-gray-300'}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={createPromoCode}
+                      className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold transition"
+                    >
+                      Add Promo Code
+                    </button>
+                  </div>
+                  {(promoFormErrors.code || promoFormErrors.percentage) && (
+                    <div className="mb-4 space-y-1">
+                      {promoFormErrors.code && <p className="text-xs font-semibold text-red-600">{promoFormErrors.code}</p>}
+                      {promoFormErrors.percentage && <p className="text-xs font-semibold text-red-600">{promoFormErrors.percentage}</p>}
+                    </div>
+                  )}
+
+                  {loadingPromoCodes ? (
+                    <p className="text-sm text-slate-500">Loading promo codes...</p>
+                  ) : promoCodes.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">No promo codes have been created yet.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-600 border-b border-slate-200">
+                            <th className="py-2 pr-4 font-semibold">Code</th>
+                            <th className="py-2 pr-4 font-semibold">Discount</th>
+                            <th className="py-2 pr-4 font-semibold">Status</th>
+                            <th className="py-2 pr-2 font-semibold">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {promoCodes.map((promo) => (
+                            <tr key={promo.id} className="border-b border-slate-100">
+                              <td className="py-3 pr-4 font-semibold text-slate-900">{promo.code}</td>
+                              <td className="py-3 pr-4 text-slate-700">{Number(promo.percentage_off)}%</td>
+                              <td className="py-3 pr-4">
+                                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${promo.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  {promo.is_active ? 'Active' : 'Disabled'}
+                                </span>
+                              </td>
+                              <td className="py-3 pr-2">
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePromoCode(promo, !promo.is_active)}
+                                    className={`px-3 py-1 rounded text-xs font-semibold ${promo.is_active ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+                                  >
+                                    {promo.is_active ? 'Disable' : 'Activate'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deletePromoCode(promo)}
+                                    className="px-3 py-1 rounded text-xs font-semibold bg-red-600 hover:bg-red-700 text-white"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <h3 className="text-xl font-semibold mb-1 text-black">Checklist Templates</h3>
+                  <p className="text-sm text-slate-500 mb-5">Define per-service checklist items that staff must complete before marking jobs complete.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <input
+                      type="text"
+                      value={newTemplateServiceName}
+                      onChange={(e) => setNewTemplateServiceName(e.target.value)}
+                      placeholder="Service name (exact)"
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    />
+                    <textarea
+                      value={newTemplateItemsInput}
+                      onChange={(e) => setNewTemplateItemsInput(e.target.value)}
+                      placeholder={'Checklist items, one per line\nExample:\nConfirm customer identity\nRun diagnostics\nCapture final verification'}
+                      rows={4}
+                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={saveChecklistTemplate}
+                    disabled={templateSaving}
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg font-semibold transition"
+                  >
+                    {templateSaving ? 'Saving...' : 'Save Checklist Template'}
+                  </button>
+
+                  <div className="mt-5 space-y-3">
+                    {checklistTemplates.length === 0 ? (
+                      <p className="text-sm text-slate-500">No checklist templates yet.</p>
+                    ) : (
+                      checklistTemplates.map((template) => (
+                        <div key={template.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-sm font-bold text-slate-900">{template.service_name}</p>
+                          <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                            {template.checklist_items.map((item) => (
+                              <li key={`${template.id}-${item}`}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 {/* ─── Availability / Blocked Dates ─── */}
                 <div className="mt-10 bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
                   <h3 className="text-xl font-semibold mb-1 text-black">Availability Management</h3>
@@ -3913,11 +4585,14 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900"
                           >
                             <option value="">Unassigned</option>
-                            {staffMembers.map((staff) => (
-                              <option key={staff.id} value={staff.id}>
-                                {staff.first_name} {staff.surname} ({staff.email})
-                              </option>
-                            ))}
+                            {staffMembers.map((staff) => {
+                              const unavailable = isStaffUnavailableForBooking(staff.id, selectedBooking);
+                              return (
+                                <option key={staff.id} value={staff.id} disabled={unavailable}>
+                                  {staff.first_name} {staff.surname} ({staff.email}){unavailable ? ' - Unavailable for this slot' : ''}
+                                </option>
+                              );
+                            })}
                           </select>
                           <button
                             onClick={assignStaffToBooking}
@@ -3957,6 +4632,62 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             )}
                           </div>
                         )}
+                      </div>
+
+                      <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
+                        <h3 className="font-bold text-slate-900 mb-3">Checklist Progress</h3>
+                        {bookingChecklistItems.length === 0 ? (
+                          <p className="text-sm text-slate-500">No checklist items linked to this booking yet.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-slate-600">
+                              {bookingChecklistItems.filter((item) => item.is_completed).length} of {bookingChecklistItems.length} completed
+                            </p>
+                            <ul className="space-y-1">
+                              {bookingChecklistItems.map((item) => (
+                                <li key={item.id} className={`text-sm ${item.is_completed ? 'text-emerald-700' : 'text-slate-700'}`}>
+                                  {item.is_completed ? '✓' : '•'} {item.item_text}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
+                        <h3 className="font-bold text-slate-900 mb-3">Staff/Admin Chat</h3>
+                        <div 
+                          ref={adminChatMessagesRef}
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 max-h-56 overflow-y-auto"
+                        >
+                          {bookingChatMessages.length === 0 ? (
+                            <p className="text-sm text-slate-500">No chat messages yet.</p>
+                          ) : (
+                            bookingChatMessages.map((message) => (
+                              <div key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.sender_role === 'admin' ? 'bg-blue-100 text-blue-900 ml-6' : 'bg-white border border-slate-200 text-slate-700 mr-6'}`}>
+                                <p className="text-[11px] font-semibold uppercase tracking-wide mb-1">{message.sender_role}</p>
+                                <p>{message.message}</p>
+                                <p className="text-[10px] text-slate-500 mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <input
+                            type="text"
+                            value={adminChatDraft}
+                            onChange={(e) => setAdminChatDraft(e.target.value)}
+                            placeholder="Message assigned staff..."
+                            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                          />
+                          <button
+                            onClick={sendAdminChatMessage}
+                            disabled={sendingAdminChat}
+                            className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 px-4 py-2 text-sm font-semibold text-white"
+                          >
+                            {sendingAdminChat ? 'Sending...' : 'Send'}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Actions */}

@@ -182,14 +182,18 @@ const ServicesScreen = ({ onNavigate, onLogout }: ServicesScreenProps) => {
                 {service.image_url && (
                   <img src={service.image_url} alt={service.title} className="absolute inset-0 w-full h-full object-cover" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-transparent"></div>
-                <div className="relative z-10">
-                  {service.id !== 3 ? (
-                    <span className="font-black text-2xl group-hover:scale-110 transition-transform duration-300 inline-block">{service.title}</span>
-                  ) : (
-                    <span className="font-black text-5xl text-red-900 group-hover:scale-105 transition-transform duration-300 inline-block">EMERGENCY</span>
-                  )}
-                </div>
+                {!service.image_url && (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-transparent"></div>
+                    <div className="relative z-10">
+                      {service.id !== 3 ? (
+                        <span className="font-black text-2xl group-hover:scale-110 transition-transform duration-300 inline-block">{service.title}</span>
+                      ) : (
+                        <span className="font-black text-5xl text-red-900 group-hover:scale-105 transition-transform duration-300 inline-block">EMERGENCY</span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="p-8">
                 <h3 className="font-black text-slate-900 mb-3 text-lg">{service.title}</h3>

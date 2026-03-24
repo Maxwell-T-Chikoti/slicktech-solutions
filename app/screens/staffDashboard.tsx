@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import {
   FaSync,
@@ -18,6 +18,10 @@ import {
   FaEnvelope,
   FaPhone,
   FaMapMarkerAlt,
+  FaCommentDots,
+  FaChevronLeft,
+  FaChevronRight,
+  FaTrash,
 } from 'react-icons/fa';
 
 interface StaffDashboardProps {
@@ -52,7 +56,34 @@ type StaffProfile = {
   role: string;
 };
 
-type TabType = 'active' | 'completed' | 'profile';
+type StaffAvailabilitySlot = {
+  id: number;
+  staff_id: string;
+  unavailable_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  note?: string | null;
+};
+
+type BookingChecklistItem = {
+  id: number;
+  booking_id: number;
+  item_text: string;
+  item_order: number;
+  is_completed: boolean;
+  completed_at?: string | null;
+};
+
+type BookingStaffChatMessage = {
+  id: number;
+  booking_id: number;
+  sender_id: string;
+  sender_role: 'admin' | 'staff';
+  message: string;
+  created_at: string;
+};
+
+type TabType = 'active' | 'completed' | 'calendar' | 'profile';
 
 const STATUS_COLORS: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-700',
@@ -74,6 +105,7 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [staffUserId, setStaffUserId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [profile, setProfile] = useState<StaffProfile | null>(null);
   const [selectedJob, setSelectedJob] = useState<StaffJob | null>(null);
@@ -87,6 +119,85 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [weekAnchorDate, setWeekAnchorDate] = useState(new Date());
+  const [availability, setAvailability] = useState<StaffAvailabilitySlot[]>([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [newUnavailableDate, setNewUnavailableDate] = useState('');
+  const [newUnavailableStart, setNewUnavailableStart] = useState('');
+  const [newUnavailableEnd, setNewUnavailableEnd] = useState('');
+  const [newUnavailableNote, setNewUnavailableNote] = useState('');
+  const [checklistByBooking, setChecklistByBooking] = useState<Record<number, BookingChecklistItem[]>>({});
+  const [chatByBooking, setChatByBooking] = useState<Record<number, BookingStaffChatMessage[]>>({});
+  const [chatDraftByBooking, setChatDraftByBooking] = useState<Record<number, string>>({});
+  const [chatSendingForBookingId, setChatSendingForBookingId] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+
+  const addNotification = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+    const notification = {
+      id: Date.now(),
+      message,
+      type,
+      timestamp: new Date()
+    };
+    setNotifications(prev => [notification, ...prev.slice(0, 9)]);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const getWeekStart = (rawDate: Date) => {
+    const date = new Date(rawDate);
+    const day = date.getDay();
+    const diff = (day + 6) % 7;
+    date.setDate(date.getDate() - diff);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  };
+
+  const addDays = (rawDate: Date, days: number) => {
+    const date = new Date(rawDate);
+    date.setDate(date.getDate() + days);
+    return date;
+  };
+
+  const formatDateKey = (rawDate: Date) => {
+    const year = rawDate.getFullYear();
+    const month = String(rawDate.getMonth() + 1).padStart(2, '0');
+    const day = String(rawDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const normalizeBookingDate = (rawDate: string) => {
+    const parsed = new Date(rawDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatDateKey(parsed);
+    }
+
+    const matched = String(rawDate || '').match(/(\d{4}-\d{2}-\d{2})/);
+    return matched ? matched[1] : String(rawDate || '');
+  };
+
+  const normalizeTime = (rawTime: string) => {
+    const value = String(rawTime || '').trim().toUpperCase();
+    const twelveHour = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+    if (twelveHour) {
+      let hour = Number(twelveHour[1]);
+      const minute = Number(twelveHour[2]);
+      const meridiem = twelveHour[3];
+      if (meridiem === 'PM' && hour < 12) hour += 12;
+      if (meridiem === 'AM' && hour === 12) hour = 0;
+      return hour * 60 + minute;
+    }
+
+    const twentyFour = value.match(/^(\d{1,2}):(\d{2})$/);
+    if (twentyFour) {
+      return Number(twentyFour[1]) * 60 + Number(twentyFour[2]);
+    }
+
+    return null;
+  };
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -101,6 +212,8 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
         onLogout();
         return;
       }
+
+      setStaffUserId(user.id);
 
       let bookings: any[] | null = null;
 
@@ -222,6 +335,205 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
     }
   };
 
+  const fetchAvailability = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    setLoadingAvailability(true);
+    const { data, error: availabilityError } = await supabase
+      .from('staff_unavailability')
+      .select('id, staff_id, unavailable_date, start_time, end_time, note')
+      .eq('staff_id', user.id)
+      .order('unavailable_date', { ascending: true });
+
+    setLoadingAvailability(false);
+
+    if (availabilityError) {
+      if (!hasMissingColumnError(availabilityError, 'staff_unavailability')) {
+        setError(availabilityError.message || 'Could not load availability.');
+      }
+      return;
+    }
+
+    setAvailability((data || []) as StaffAvailabilitySlot[]);
+  };
+
+  const addUnavailabilitySlot = async () => {
+    if (!staffUserId || !newUnavailableDate) {
+      setError('Select an unavailable date before saving.');
+      return;
+    }
+
+    if (newUnavailableStart && newUnavailableEnd && newUnavailableStart >= newUnavailableEnd) {
+      setError('End time must be later than start time.');
+      return;
+    }
+
+    setError(null);
+    const payload = {
+      staff_id: staffUserId,
+      unavailable_date: newUnavailableDate,
+      start_time: newUnavailableStart || null,
+      end_time: newUnavailableEnd || null,
+      note: newUnavailableNote.trim(),
+    };
+
+    const { error: insertError } = await supabase.from('staff_unavailability').insert([payload]);
+    if (insertError) {
+      setError(insertError.message || 'Could not save availability slot.');
+      return;
+    }
+
+    setNewUnavailableDate('');
+    setNewUnavailableStart('');
+    setNewUnavailableEnd('');
+    setNewUnavailableNote('');
+    fetchAvailability();
+  };
+
+  const removeUnavailabilitySlot = async (id: number) => {
+    const { error: deleteError } = await supabase.from('staff_unavailability').delete().eq('id', id);
+    if (deleteError) {
+      setError(deleteError.message || 'Could not remove availability slot.');
+      return;
+    }
+
+    setAvailability((prev) => prev.filter((slot) => slot.id !== id));
+  };
+
+  const findTemplateItemsForService = async (serviceName: string) => {
+    const { data, error: templateError } = await supabase
+      .from('checklist_templates')
+      .select('service_name, checklist_items');
+
+    if (templateError) {
+      return [] as string[];
+    }
+
+    const matched = (data || []).find(
+      (row: any) => String(row.service_name || '').trim().toLowerCase() === String(serviceName || '').trim().toLowerCase()
+    );
+
+    if (!matched || !Array.isArray(matched.checklist_items)) {
+      return [] as string[];
+    }
+
+    return matched.checklist_items
+      .map((item: unknown) => String(item || '').trim())
+      .filter((item: string) => !!item);
+  };
+
+  const fetchChecklistForJob = async (job: StaffJob) => {
+    const { data: existingItems, error: existingError } = await supabase
+      .from('booking_checklist_items')
+      .select('id, booking_id, item_text, item_order, is_completed, completed_at')
+      .eq('booking_id', job.id)
+      .order('item_order', { ascending: true });
+
+    if (existingError) {
+      return;
+    }
+
+    let nextItems = (existingItems || []) as BookingChecklistItem[];
+
+    if (nextItems.length === 0) {
+      const templateItems = await findTemplateItemsForService(job.service);
+      if (templateItems.length > 0) {
+        const rows = templateItems.map((itemText, idx) => ({
+          booking_id: job.id,
+          item_text: itemText,
+          item_order: idx,
+        }));
+
+        await supabase.from('booking_checklist_items').insert(rows);
+
+        const { data: seededItems } = await supabase
+          .from('booking_checklist_items')
+          .select('id, booking_id, item_text, item_order, is_completed, completed_at')
+          .eq('booking_id', job.id)
+          .order('item_order', { ascending: true });
+
+        nextItems = (seededItems || []) as BookingChecklistItem[];
+      }
+    }
+
+    setChecklistByBooking((prev) => ({ ...prev, [job.id]: nextItems }));
+  };
+
+  const toggleChecklistItem = async (jobId: number, item: BookingChecklistItem, isCompleted: boolean) => {
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from('booking_checklist_items')
+      .update({
+        is_completed: isCompleted,
+        completed_at: isCompleted ? nowIso : null,
+        completed_by: isCompleted ? staffUserId : null,
+      })
+      .eq('id', item.id);
+
+    if (updateError) {
+      setError(updateError.message || 'Could not update checklist item.');
+      return;
+    }
+
+    setChecklistByBooking((prev) => ({
+      ...prev,
+      [jobId]: (prev[jobId] || []).map((row) =>
+        row.id === item.id
+          ? { ...row, is_completed: isCompleted, completed_at: isCompleted ? nowIso : null }
+          : row
+      ),
+    }));
+  };
+
+  const fetchChatForJob = async (bookingId: number) => {
+    const { data, error: chatError } = await supabase
+      .from('booking_staff_chat_messages')
+      .select('id, booking_id, sender_id, sender_role, message, created_at')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: true });
+
+    if (chatError) {
+      return;
+    }
+
+    setChatByBooking((prev) => ({
+      ...prev,
+      [bookingId]: (data || []) as BookingStaffChatMessage[],
+    }));
+  };
+
+  const sendChatMessage = async (bookingId: number) => {
+    const draft = String(chatDraftByBooking[bookingId] || '').trim();
+    if (!draft || !staffUserId) return;
+
+    setChatSendingForBookingId(bookingId);
+
+    const { error: insertError } = await supabase
+      .from('booking_staff_chat_messages')
+      .insert([
+        {
+          booking_id: bookingId,
+          sender_id: staffUserId,
+          sender_role: 'staff',
+          message: draft,
+        },
+      ]);
+
+    setChatSendingForBookingId(null);
+
+    if (insertError) {
+      setError(insertError.message || 'Could not send message.');
+      return;
+    }
+
+    setChatDraftByBooking((prev) => ({ ...prev, [bookingId]: '' }));
+    fetchChatForJob(bookingId);
+  };
+
   const acknowledgeJob = async (jobId: number) => {
     const timestamp = new Date().toISOString();
     const { error: updateError } = await supabase
@@ -285,6 +597,12 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
       return;
     }
 
+    const checklistItems = checklistByBooking[completingJob.id] || [];
+    if (checklistItems.length > 0 && checklistItems.some((item) => !item.is_completed)) {
+      setReportError('Complete all checklist items before marking this job as complete.');
+      return;
+    }
+
     setSubmittingReport(true);
     setReportError(null);
 
@@ -336,6 +654,8 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const openJobDetail = (job: StaffJob) => {
     setSelectedJob(job);
     setNotesDraft(job.staff_notes || '');
+    fetchChecklistForJob(job);
+    fetchChatForJob(job.id);
   };
 
   const openCompleteModal = (job: StaffJob) => {
@@ -388,10 +708,81 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   useEffect(() => {
     fetchJobs();
     fetchProfile();
+    fetchAvailability();
   }, []);
+
+  // Real-time chat subscription
+  useEffect(() => {
+    if (!selectedJob) return;
+
+    const channel = supabase
+      .channel(`staff-booking-chat-${selectedJob.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'booking_staff_chat_messages',
+        filter: `booking_id=eq.${selectedJob.id}`,
+      }, (payload) => {
+        const newMessage = payload.new as BookingStaffChatMessage;
+        
+        // Update chat state
+        setChatByBooking((prev) => ({
+          ...prev,
+          [selectedJob.id]: [...(prev[selectedJob.id] || []), newMessage],
+        }));
+
+        // Show notification only if message is from admin
+        if (newMessage.sender_role === 'admin') {
+          addNotification(`New message from admin: "${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}"`, 'info');
+        }
+
+        // Auto-scroll to latest message
+        setTimeout(() => {
+          if (chatMessagesRef.current) {
+            chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+          }
+        }, 0);
+      })
+      .subscribe();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [selectedJob?.id]);
+
+  // Auto-dismiss notifications after 4 seconds
+  useEffect(() => {
+    if (notifications.length === 0) return;
+
+    const timer = setTimeout(() => {
+      if (notifications.length > 0) {
+        removeNotification(notifications[notifications.length - 1].id);
+      }
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [notifications]);
 
   const activeJobs = jobs.filter((job) => job.status !== 'Complete' && job.status !== 'Rejected');
   const completedJobs = jobs.filter((job) => job.status === 'Complete');
+  const weekStart = getWeekStart(weekAnchorDate);
+  const weekDays = Array.from({ length: 7 }).map((_, idx) => addDays(weekStart, idx));
+
+  const jobsByDate = activeJobs.reduce((acc, job) => {
+    const key = normalizeBookingDate(job.date);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(job);
+    return acc;
+  }, {} as Record<string, StaffJob[]>);
+
+  const availabilityByDate = availability.reduce((acc, slot) => {
+    const key = slot.unavailable_date;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(slot);
+    return acc;
+  }, {} as Record<string, StaffAvailabilitySlot[]>);
 
   const filterJobs = (list: StaffJob[]) =>
     list.filter((job) => {
@@ -435,6 +826,35 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
         </div>
       </header>
 
+      {/* Notification Display */}
+      {notifications.length > 0 && (
+        <div className="fixed top-6 right-6 z-50 space-y-2 max-w-md">
+          {notifications.map((notif) => {
+            const bgColor = {
+              info: 'bg-blue-100 border-blue-300 text-blue-900',
+              success: 'bg-emerald-100 border-emerald-300 text-emerald-900',
+              warning: 'bg-amber-100 border-amber-300 text-amber-900',
+              error: 'bg-red-100 border-red-300 text-red-900',
+            }[notif.type] || 'bg-slate-100 border-slate-300 text-slate-900';
+
+            return (
+              <div
+                key={notif.id}
+                className={`${bgColor} border rounded-lg p-4 shadow-lg flex justify-between items-start`}
+              >
+                <p className="text-sm font-medium">{notif.message}</p>
+                <button
+                  onClick={() => removeNotification(notif.id)}
+                  className="ml-4 text-lg hover:opacity-75"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <main className="max-w-6xl mx-auto px-6 py-8">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white border border-slate-200 rounded-2xl p-5">
@@ -459,6 +879,7 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
           {([
             { key: 'active', label: 'Active Jobs', icon: <FaTools /> },
             { key: 'completed', label: 'Completed Jobs', icon: <FaCheckCircle /> },
+            { key: 'calendar', label: 'Calendar', icon: <FaCalendarAlt /> },
             { key: 'profile', label: 'My Profile', icon: <FaUser /> },
           ] as { key: TabType; label: string; icon: React.ReactNode }[]).map((tab) => (
             <button
@@ -473,7 +894,7 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
           ))}
         </div>
 
-        {activeTab !== 'profile' && (
+        {(activeTab === 'active' || activeTab === 'completed') && (
           <>
             <div className="relative mb-4">
               <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
@@ -568,6 +989,136 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
               </div>
             )}
           </>
+        )}
+
+        {activeTab === 'calendar' && (
+          <div className="space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-lg font-bold text-slate-900">Weekly Assigned Jobs</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setWeekAnchorDate((prev) => addDays(prev, -7))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 hover:bg-slate-50"
+                  >
+                    <FaChevronLeft />
+                  </button>
+                  <button
+                    onClick={() => setWeekAnchorDate(new Date())}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    This Week
+                  </button>
+                  <button
+                    onClick={() => setWeekAnchorDate((prev) => addDays(prev, 7))}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700 hover:bg-slate-50"
+                  >
+                    <FaChevronRight />
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+                {weekDays.map((day) => {
+                  const key = formatDateKey(day);
+                  const dayJobs = jobsByDate[key] || [];
+                  const dayUnavailable = availabilityByDate[key] || [];
+                  return (
+                    <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-3 min-h-[170px]">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                      </p>
+                      <p className="text-sm font-bold text-slate-900">{day.toLocaleDateString()}</p>
+
+                      <div className="mt-3 space-y-2">
+                        {dayUnavailable.map((slot) => (
+                          <div key={`un-${slot.id}`} className="rounded-lg bg-red-50 border border-red-200 px-2 py-1 text-[11px] text-red-700">
+                            Unavailable {slot.start_time && slot.end_time ? `${slot.start_time.slice(0, 5)}-${slot.end_time.slice(0, 5)}` : 'all day'}
+                          </div>
+                        ))}
+                        {dayJobs.length === 0 ? (
+                          <p className="text-[11px] text-slate-400">No jobs</p>
+                        ) : (
+                          dayJobs.map((job) => (
+                            <button
+                              key={job.id}
+                              type="button"
+                              onClick={() => openJobDetail(job)}
+                              className="w-full rounded-lg bg-blue-50 border border-blue-200 px-2 py-1 text-left text-[11px] text-blue-700 hover:bg-blue-100"
+                            >
+                              #{job.id} {job.time}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-5">
+              <h2 className="text-lg font-bold text-slate-900 mb-3">Mark Unavailable Dates/Hours</h2>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input
+                  type="date"
+                  value={newUnavailableDate}
+                  onChange={(e) => setNewUnavailableDate(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+                <input
+                  type="time"
+                  value={newUnavailableStart}
+                  onChange={(e) => setNewUnavailableStart(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+                <input
+                  type="time"
+                  value={newUnavailableEnd}
+                  onChange={(e) => setNewUnavailableEnd(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  value={newUnavailableNote}
+                  onChange={(e) => setNewUnavailableNote(e.target.value)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                />
+              </div>
+              <div className="mt-3">
+                <button
+                  onClick={addUnavailabilitySlot}
+                  className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Save Unavailability
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                {loadingAvailability ? (
+                  <p className="text-sm text-slate-500">Loading availability...</p>
+                ) : availability.length === 0 ? (
+                  <p className="text-sm text-slate-500">No unavailable slots added yet.</p>
+                ) : (
+                  availability.map((slot) => (
+                    <div key={slot.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                      <span>
+                        {slot.unavailable_date} {slot.start_time && slot.end_time ? `${slot.start_time.slice(0, 5)}-${slot.end_time.slice(0, 5)}` : '(all day)'}
+                        {slot.note ? ` - ${slot.note}` : ''}
+                      </span>
+                      <button
+                        onClick={() => removeUnavailabilitySlot(slot.id)}
+                        className="rounded-md bg-red-100 px-2 py-1 text-red-700 hover:bg-red-200"
+                        title="Remove"
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {activeTab === 'profile' && profile && (
@@ -700,6 +1251,73 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
                 </button>
               </div>
 
+              <div>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  <FaClipboardList className="inline mr-1" /> Service Checklist
+                </p>
+                {(checklistByBooking[selectedJob.id] || []).length === 0 ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                    No checklist template configured for this service.
+                  </div>
+                ) : (
+                  <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    {(checklistByBooking[selectedJob.id] || []).map((item) => (
+                      <label key={item.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={item.is_completed}
+                          onChange={(e) => toggleChecklistItem(selectedJob.id, item, e.target.checked)}
+                        />
+                        <span className={item.is_completed ? 'line-through text-slate-400' : ''}>{item.item_text}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  <FaCommentDots className="inline mr-1" /> Staff/Admin Chat
+                </p>
+                <div 
+                  ref={chatMessagesRef}
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 max-h-56 overflow-y-auto"
+                >
+                  {(chatByBooking[selectedJob.id] || []).length === 0 ? (
+                    <p className="text-sm text-slate-500">No messages yet.</p>
+                  ) : (
+                    (chatByBooking[selectedJob.id] || []).map((message) => (
+                      <div key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.sender_role === 'staff' ? 'bg-blue-100 text-blue-900 ml-6' : 'bg-white border border-slate-200 text-slate-700 mr-6'}`}>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide mb-1">{message.sender_role}</p>
+                        <p>{message.message}</p>
+                        <p className="text-[10px] text-slate-500 mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatDraftByBooking[selectedJob.id] || ''}
+                    onChange={(e) =>
+                      setChatDraftByBooking((prev) => ({
+                        ...prev,
+                        [selectedJob.id]: e.target.value,
+                      }))
+                    }
+                    placeholder="Send a quick message to admin..."
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                  />
+                  <button
+                    onClick={() => sendChatMessage(selectedJob.id)}
+                    disabled={chatSendingForBookingId === selectedJob.id}
+                    className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    {chatSendingForBookingId === selectedJob.id ? 'Sending...' : 'Send'}
+                  </button>
+                </div>
+              </div>
+
               {selectedJob.staff_completion_report && (
                 <div>
                   <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
@@ -753,6 +1371,21 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
               <p className="text-sm text-slate-600">
                 You are marking <span className="font-semibold">{completingJob.service}</span> as complete. Write a short report explaining what was done.
               </p>
+              {(checklistByBooking[completingJob.id] || []).length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">Checklist Progress</p>
+                  <p className="text-xs text-slate-600 mb-2">
+                    {(checklistByBooking[completingJob.id] || []).filter((item) => item.is_completed).length} of {(checklistByBooking[completingJob.id] || []).length} completed
+                  </p>
+                  <ul className="space-y-1">
+                    {(checklistByBooking[completingJob.id] || []).map((item) => (
+                      <li key={item.id} className={`text-xs ${item.is_completed ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {item.is_completed ? '✓' : '•'} {item.item_text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">
                   <FaFileAlt className="inline mr-1 text-slate-400" /> Job Completion Report

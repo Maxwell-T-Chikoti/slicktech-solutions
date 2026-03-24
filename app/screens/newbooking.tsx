@@ -34,10 +34,20 @@ type ServiceExplainResult = {
   prepChecklist: string[];
 };
 
+type AppliedPromo = {
+  code: string;
+  percentageOff: number;
+};
+
 const formatPriceCAD = (rawPrice: string) => {
   const numeric = parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
   if (Number.isNaN(numeric)) return rawPrice || '';
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(numeric);
+};
+
+const parsePriceAmount = (rawPrice: string) => {
+  const numeric = parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
+  return Number.isNaN(numeric) ? 0 : numeric;
 };
 
 const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingScreenProps) => {
@@ -62,6 +72,10 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isExplainingService, setIsExplainingService] = useState(false);
   const [serviceExplainResult, setServiceExplainResult] = useState<ServiceExplainResult | null>(null);
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'service' | 'date' | 'description', string>>>({});
   const [uiNotice, setUiNotice] = useState<{ isOpen: boolean; title: string; message: string }>({
     isOpen: false,
@@ -105,6 +119,22 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
     fetch();
   }, []);
 
+  const selectedServiceDetails = services.find((s) => s.title === bookingData.service);
+  const basePriceAmount = parsePriceAmount(selectedServiceDetails?.price || '');
+  const discountAmount = appliedPromo ? (basePriceAmount * appliedPromo.percentageOff) / 100 : 0;
+  const finalPriceAmount = Math.max(basePriceAmount - discountAmount, 0);
+
+  React.useEffect(() => {
+    setBookingData((prev) => {
+      if (!prev.service || basePriceAmount <= 0) {
+        return prev.price ? { ...prev, price: '' } : prev;
+      }
+
+      const nextPrice = formatPriceCAD(String(finalPriceAmount));
+      return prev.price === nextPrice ? prev : { ...prev, price: nextPrice };
+    });
+  }, [bookingData.service, basePriceAmount, finalPriceAmount]);
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -112,12 +142,11 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
       setFieldErrors((prev) => ({ ...prev, [name]: '' }));
     }
     if (name === 'service') {
-      const matched = services.find(s => s.title === value);
       setServiceExplainResult(null);
+      setPromoError('');
       setBookingData({
         ...bookingData,
         service: value,
-        price: matched?.price ? formatPriceCAD(matched.price) : ''
       });
     } else {
       setBookingData({
@@ -365,6 +394,50 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
     } finally {
       setIsExplainingService(false);
     }
+  };
+
+  const handleApplyPromo = async () => {
+    const normalizedCode = promoCodeInput.trim().toUpperCase();
+    if (!normalizedCode) {
+      setPromoError('Enter a promo code first.');
+      return;
+    }
+
+    if (!bookingData.service) {
+      setPromoError('Select a service before applying a promo code.');
+      return;
+    }
+
+    setPromoLoading(true);
+    setPromoError('');
+
+    try {
+      const response = await fetch(`/api/promo-codes/validate?code=${encodeURIComponent(normalizedCode)}`);
+      const json = await response.json();
+
+      if (!response.ok || !json?.valid) {
+        setAppliedPromo(null);
+        setPromoError(String(json?.error || 'Promo code is invalid or inactive.'));
+        return;
+      }
+
+      setAppliedPromo({
+        code: String(json.code),
+        percentageOff: Number(json.percentageOff),
+      });
+      setPromoCodeInput(String(json.code));
+    } catch (error) {
+      console.error('Failed to validate promo code:', error);
+      setAppliedPromo(null);
+      setPromoError('Could not validate the promo code right now. Please try again.');
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setPromoError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -837,6 +910,59 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                   </div>
                 )}
 
+                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                  <p className="text-sm font-semibold text-emerald-900 mb-3">Promo Code</p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={promoCodeInput}
+                      onChange={(e) => {
+                        setPromoCodeInput(e.target.value.toUpperCase());
+                        setPromoError('');
+                      }}
+                      placeholder="Enter code (e.g. MAX50)"
+                      className="flex-1 border border-emerald-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-emerald-500 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyPromo}
+                      disabled={promoLoading}
+                      className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-sm font-semibold"
+                    >
+                      {promoLoading ? 'Applying...' : 'Apply'}
+                    </button>
+                    {appliedPromo && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePromo}
+                        className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm font-semibold"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  {promoError && <p className="mt-2 text-xs font-semibold text-red-600">{promoError}</p>}
+
+                  {basePriceAmount > 0 && (
+                    <div className="mt-3 rounded-lg bg-white border border-emerald-100 p-3 text-sm space-y-1">
+                      <div className="flex items-center justify-between text-slate-700">
+                        <span>Base price</span>
+                        <span>{formatPriceCAD(String(basePriceAmount))}</span>
+                      </div>
+                      {appliedPromo && (
+                        <div className="flex items-center justify-between text-emerald-700 font-semibold">
+                          <span>{appliedPromo.code} ({appliedPromo.percentageOff}% off)</span>
+                          <span>-{formatPriceCAD(String(discountAmount))}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-1 border-t border-emerald-100 font-bold text-slate-900">
+                        <span>Final price</span>
+                        <span>{formatPriceCAD(String(finalPriceAmount))}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <p className="text-sm font-semibold text-indigo-900">Explain My Service</p>
@@ -1043,6 +1169,10 @@ const NewBookingScreen = ({ onNavigate, onLogout, selectedService }: NewBookingS
                 <p className="text-xs text-slate-600">
                   {bookingData.date || 'Pick a date'} at {bookingData.time || 'Pick a time'}
                 </p>
+                <p className="text-xs text-emerald-700 font-semibold mt-1">
+                  Final: {bookingData.price || 'Price will appear after service selection'}
+                </p>
+                {appliedPromo && <p className="text-[11px] text-emerald-700">Promo applied: {appliedPromo.code}</p>}
               </div>
             </div>
 
