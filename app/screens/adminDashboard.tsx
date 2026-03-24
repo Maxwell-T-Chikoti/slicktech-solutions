@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import supabase from '@/app/lib/supabaseClient';
 import AppAlertDialog from '@/app/components/AppAlertDialog';
-import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars, FaPaperclip, FaThumbtack } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -89,6 +89,7 @@ type StaffRecommendation = {
   score: number;
   reasons: string[];
   serviceCompletedCount: number;
+  locationCompletedCount: number;
   activeCount: number;
   completionRate: number;
 };
@@ -148,10 +149,29 @@ type BookingStaffChatMessage = {
   sender_id: string;
   sender_role: 'admin' | 'staff';
   message: string;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  is_pinned?: boolean;
+  pinned_by?: string | null;
+  pinned_at?: string | null;
+  read_by_admin_at?: string | null;
+  read_by_staff_at?: string | null;
   created_at: string;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const CHAT_BASE_SELECT = 'id, booking_id, sender_id, sender_role, message, created_at';
+const CHAT_ENHANCED_SELECT = `${CHAT_BASE_SELECT}, attachment_url, attachment_name, attachment_type, is_pinned, pinned_by, pinned_at, read_by_admin_at, read_by_staff_at`;
+
+const hasMissingColumnError = (error: unknown, columnName: string) => {
+  const message = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: string }).message || '')
+    : '';
+
+  return message.toLowerCase().includes(columnName.toLowerCase()) && message.toLowerCase().includes('does not exist');
+};
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const { theme, toggleTheme } = useTheme();
@@ -241,8 +261,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [bookingChecklistItems, setBookingChecklistItems] = useState<BookingChecklistItem[]>([]);
   const [bookingChatMessages, setBookingChatMessages] = useState<BookingStaffChatMessage[]>([]);
   const [adminChatDraft, setAdminChatDraft] = useState('');
+  const [adminChatAttachmentFile, setAdminChatAttachmentFile] = useState<File | null>(null);
   const [sendingAdminChat, setSendingAdminChat] = useState(false);
+  const [uploadingAdminAttachment, setUploadingAdminAttachment] = useState(false);
+  const [isStaffTyping, setIsStaffTyping] = useState(false);
   const adminChatMessagesRef = useRef<HTMLDivElement>(null);
+  const adminChatChannelRef = useRef<any>(null);
   // customer messaging
   const [customMessage, setCustomMessage] = useState<string>('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -1620,20 +1644,133 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const fetchBookingChatMessages = async (bookingId: number) => {
     const { data, error: chatError } = await supabase
       .from('booking_staff_chat_messages')
-      .select('id, booking_id, sender_id, sender_role, message, created_at')
+      .select(CHAT_ENHANCED_SELECT)
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: true });
 
+    let rows: BookingStaffChatMessage[] = [];
+
     if (chatError) {
-      setBookingChatMessages([]);
+      const mayBeMissingFeatureColumns = [
+        'attachment_url',
+        'attachment_name',
+        'attachment_type',
+        'is_pinned',
+        'pinned_by',
+        'pinned_at',
+        'read_by_admin_at',
+        'read_by_staff_at',
+      ].some((column) => hasMissingColumnError(chatError, column));
+
+      if (!mayBeMissingFeatureColumns) {
+        setBookingChatMessages([]);
+        return;
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('booking_staff_chat_messages')
+        .select(CHAT_BASE_SELECT)
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: true });
+
+      if (fallbackError) {
+        setBookingChatMessages([]);
+        return;
+      }
+
+      rows = ((fallbackData || []) as BookingStaffChatMessage[]).map((row) => ({
+        ...row,
+        is_pinned: false,
+      }));
+    } else {
+      rows = (data || []) as BookingStaffChatMessage[];
+    }
+
+    setBookingChatMessages(rows);
+
+    const unreadFromStaff = rows.filter((row) => row.sender_role === 'staff' && !row.read_by_admin_at);
+    if (unreadFromStaff.length > 0) {
+      const readAt = new Date().toISOString();
+      const { error: readUpdateError } = await supabase
+        .from('booking_staff_chat_messages')
+        .update({ read_by_admin_at: readAt })
+        .eq('booking_id', bookingId)
+        .eq('sender_role', 'staff')
+        .is('read_by_admin_at', null);
+
+      if (readUpdateError && !hasMissingColumnError(readUpdateError, 'read_by_admin_at')) {
+        console.error('Failed to mark admin read receipts:', readUpdateError);
+      }
+
+      setBookingChatMessages((prev) =>
+        prev.map((row) =>
+          row.sender_role === 'staff' && !row.read_by_admin_at
+            ? { ...row, read_by_admin_at: readAt }
+            : row
+        )
+      );
+    }
+  };
+
+  const uploadAdminChatAttachment = async (bookingId: number, file: File) => {
+    const token = await getAdminAccessToken();
+    const formData = new FormData();
+    formData.append('booking_id', String(bookingId));
+    formData.append('file', file);
+
+    const response = await fetch('/api/chat-attachments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json?.error || 'Could not upload attachment.');
+    }
+
+    return {
+      attachment_url: String(json?.url || ''),
+      attachment_name: String(json?.name || file.name || 'attachment'),
+      attachment_type: String(json?.type || file.type || 'application/octet-stream'),
+    };
+  };
+
+  const togglePinChatMessage = async (message: BookingStaffChatMessage) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const nextPinned = !message.is_pinned;
+    const payload = {
+      is_pinned: nextPinned,
+      pinned_by: nextPinned ? user?.id || null : null,
+      pinned_at: nextPinned ? new Date().toISOString() : null,
+    };
+
+    const { error: updateError } = await supabase
+      .from('booking_staff_chat_messages')
+      .update(payload)
+      .eq('id', message.id);
+
+    if (updateError) {
+      if (hasMissingColumnError(updateError, 'is_pinned') || hasMissingColumnError(updateError, 'pinned_at')) {
+        showAlertDialog('Chat feature columns are missing. Run chat migration SQL to enable pinning.', 'Chat migration required');
+        return;
+      }
+      showAlertDialog(updateError.message || 'Could not update pinned message.', 'Chat update failed');
       return;
     }
 
-    setBookingChatMessages((data || []) as BookingStaffChatMessage[]);
+    setBookingChatMessages((prev) => prev.map((row) => (row.id === message.id ? { ...row, ...payload } : row)));
   };
 
   const sendAdminChatMessage = async () => {
-    if (!selectedBooking || !adminChatDraft.trim()) return;
+    if (!selectedBooking) return;
+    const trimmedDraft = adminChatDraft.trim();
+    if (!trimmedDraft && !adminChatAttachmentFile) return;
 
     const {
       data: { user },
@@ -1645,16 +1782,39 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
 
     setSendingAdminChat(true);
-    const { error: insertError } = await supabase
+
+    let attachmentPayload: {
+      attachment_url?: string;
+      attachment_name?: string;
+      attachment_type?: string;
+    } = {};
+
+    if (adminChatAttachmentFile) {
+      setUploadingAdminAttachment(true);
+      try {
+        attachmentPayload = await uploadAdminChatAttachment(selectedBooking.id, adminChatAttachmentFile);
+      } catch (uploadError: any) {
+        setUploadingAdminAttachment(false);
+        setSendingAdminChat(false);
+        showAlertDialog(uploadError?.message || 'Could not upload attachment.', 'Attachment upload failed');
+        return;
+      }
+      setUploadingAdminAttachment(false);
+    }
+
+    const { data: insertedData, error: insertError } = await supabase
       .from('booking_staff_chat_messages')
       .insert([
         {
           booking_id: selectedBooking.id,
           sender_id: user.id,
           sender_role: 'admin',
-          message: adminChatDraft.trim(),
+          message: trimmedDraft,
+          ...attachmentPayload,
         },
-      ]);
+      ])
+      .select(CHAT_BASE_SELECT)
+      .single();
 
     setSendingAdminChat(false);
 
@@ -1664,7 +1824,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
 
     setAdminChatDraft('');
-    fetchBookingChatMessages(selectedBooking.id);
+    setAdminChatAttachmentFile(null);
+    if (insertedData) {
+      setBookingChatMessages((prev) => {
+        if (prev.some((row) => row.id === insertedData.id)) return prev;
+        return [...prev, insertedData as BookingStaffChatMessage];
+      });
+    } else {
+      fetchBookingChatMessages(selectedBooking.id);
+    }
+    if (adminChatChannelRef.current) {
+      void adminChatChannelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { senderRole: 'admin', isTyping: false },
+      });
+    }
   };
 
   // Activity logging
@@ -1968,6 +2143,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
     }
 
     const serviceName = (selectedBooking.service || '').trim().toLowerCase();
+    const bookingLocation = (selectedBooking.location || selectedBooking.user_location || '').trim().toLowerCase();
     let best: StaffRecommendation | null = null;
 
     staffMembers.forEach((staff) => {
@@ -1996,17 +2172,31 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         (job) => (job.service || '').trim().toLowerCase() === serviceName
       ).length;
 
-      const experienceScore = Math.min(serviceCompletedCount * 20, 40);
-      const reliabilityScore = Math.max(0, Math.min(35, summary.completionRate * 0.35));
-      const availabilityScore = Math.max(0, 25 - summary.activeCount * 5);
-      const continuityScore = summary.topService.toLowerCase() === serviceName ? 10 : 0;
-      const score = Math.round(experienceScore + reliabilityScore + availabilityScore + continuityScore);
+      const locationCompletedCount = summary.completedJobs.filter((job) => {
+        const staffJobLocation = (job.location || job.user_location || '').trim().toLowerCase();
+        if (!bookingLocation || !staffJobLocation) return false;
+        return staffJobLocation.includes(bookingLocation) || bookingLocation.includes(staffJobLocation);
+      }).length;
+
+      const serviceSkillScore = Math.min(serviceCompletedCount * 18, 36);
+      const locationSkillScore = Math.min(locationCompletedCount * 8, 16);
+      const reliabilityScore = Math.max(0, Math.min(28, summary.completionRate * 0.28));
+      const workloadScore = Math.max(0, 20 - summary.activeCount * 4);
+      const continuityScore = summary.topService.toLowerCase() === serviceName ? 8 : 0;
+      const score = Math.min(100, Math.round(serviceSkillScore + locationSkillScore + reliabilityScore + workloadScore + continuityScore));
 
       const reasons: string[] = [];
       if (serviceCompletedCount > 0) {
         reasons.push(`${serviceCompletedCount} completed ${selectedBooking.service} job${serviceCompletedCount === 1 ? '' : 's'}`);
       } else {
         reasons.push('No direct completions on this exact service yet');
+      }
+      if (bookingLocation) {
+        reasons.push(
+          locationCompletedCount > 0
+            ? `${locationCompletedCount} completion${locationCompletedCount === 1 ? '' : 's'} near ${selectedBooking.location || selectedBooking.user_location}`
+            : 'Limited location-specific history for this area'
+        );
       }
       reasons.push(`${summary.completionRate}% completion rate`);
       reasons.push(
@@ -2020,6 +2210,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         score,
         reasons,
         serviceCompletedCount,
+        locationCompletedCount,
         activeCount: summary.activeCount,
         completionRate: summary.completionRate,
       };
@@ -2182,6 +2373,8 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       setBookingChecklistItems([]);
       setBookingChatMessages([]);
       setAdminChatDraft('');
+      setAdminChatAttachmentFile(null);
+      setIsStaffTyping(false);
       return;
     }
 
@@ -2203,13 +2396,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         filter: `booking_id=eq.${selectedBooking.id}`,
       }, (payload) => {
         const newMessage = payload.new as BookingStaffChatMessage;
-        
-        // Update chat state
-        setBookingChatMessages((prev) => [...prev, newMessage]);
+
+        setBookingChatMessages((prev) => {
+          if (prev.some((row) => row.id === newMessage.id)) return prev;
+          return [...prev, newMessage];
+        });
 
         // Show notification only if message is from staff
         if (newMessage.sender_role === 'staff') {
           addNotification(`New message from staff: "${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}"`, 'info');
+          const readAt = new Date().toISOString();
+          void supabase
+            .from('booking_staff_chat_messages')
+            .update({ read_by_admin_at: readAt })
+            .eq('id', newMessage.id)
+            .is('read_by_admin_at', null)
+            .then(({ error }) => {
+              if (error && !hasMissingColumnError(error, 'read_by_admin_at')) {
+                console.error('Failed to set realtime admin read receipt:', error);
+              }
+            });
         }
 
         // Auto-scroll to latest message
@@ -2219,9 +2425,27 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           }
         }, 0);
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'booking_staff_chat_messages',
+        filter: `booking_id=eq.${selectedBooking.id}`,
+      }, (payload) => {
+        const updated = payload.new as BookingStaffChatMessage;
+        setBookingChatMessages((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload?.senderRole === 'staff') {
+          setIsStaffTyping(Boolean(payload?.isTyping));
+        }
+      })
       .subscribe();
 
+    adminChatChannelRef.current = channel;
+
     return () => {
+      setIsStaffTyping(false);
+      adminChatChannelRef.current = null;
       if (channel) {
         supabase.removeChannel(channel);
       }
@@ -4656,6 +4880,21 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
                       <div className="backdrop-blur-lg bg-white/50 rounded-2xl p-6 border border-gray-200">
                         <h3 className="font-bold text-slate-900 mb-3">Staff/Admin Chat</h3>
+                        {bookingChatMessages.some((message) => message.is_pinned) && (
+                          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-2">Pinned messages</p>
+                            <div className="space-y-2">
+                              {bookingChatMessages
+                                .filter((message) => message.is_pinned)
+                                .map((message) => (
+                                  <div key={`pinned-${message.id}`} className="text-xs text-slate-700 border-l-2 border-amber-300 pl-2">
+                                    <p className="font-semibold">{message.sender_role}</p>
+                                    <p>{message.message || message.attachment_name || 'Pinned attachment'}</p>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                         <div 
                           ref={adminChatMessagesRef}
                           className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 max-h-56 overflow-y-auto"
@@ -4665,29 +4904,80 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           ) : (
                             bookingChatMessages.map((message) => (
                               <div key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.sender_role === 'admin' ? 'bg-blue-100 text-blue-900 ml-6' : 'bg-white border border-slate-200 text-slate-700 mr-6'}`}>
-                                <p className="text-[11px] font-semibold uppercase tracking-wide mb-1">{message.sender_role}</p>
-                                <p>{message.message}</p>
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide">{message.sender_role}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePinChatMessage(message)}
+                                    className={`text-xs ${message.is_pinned ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                    title={message.is_pinned ? 'Unpin message' : 'Pin message'}
+                                  >
+                                    <FaThumbtack />
+                                  </button>
+                                </div>
+                                {message.message ? <p>{message.message}</p> : null}
+                                {message.attachment_url && (
+                                  <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                                    {String(message.attachment_type || '').startsWith('image/') ? (
+                                      <a href={message.attachment_url} target="_blank" rel="noreferrer" className="block">
+                                        <img src={message.attachment_url} alt={message.attachment_name || 'Attachment'} className="max-h-40 rounded-md object-cover" />
+                                      </a>
+                                    ) : (
+                                      <a href={message.attachment_url} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">
+                                        {message.attachment_name || 'Download attachment'}
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
                                 <p className="text-[10px] text-slate-500 mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                                {message.sender_role === 'admin' && (
+                                  <p className="text-[10px] text-slate-500">
+                                    {message.read_by_staff_at ? `Seen ${new Date(message.read_by_staff_at).toLocaleTimeString()}` : 'Sent'}
+                                  </p>
+                                )}
                               </div>
                             ))
                           )}
                         </div>
+                        {isStaffTyping && (
+                          <p className="mt-2 text-xs text-slate-500">Staff is typing...</p>
+                        )}
                         <div className="mt-3 flex gap-2">
                           <input
                             type="text"
                             value={adminChatDraft}
-                            onChange={(e) => setAdminChatDraft(e.target.value)}
+                            onChange={(e) => {
+                              setAdminChatDraft(e.target.value);
+                              if (adminChatChannelRef.current) {
+                                void adminChatChannelRef.current.send({
+                                  type: 'broadcast',
+                                  event: 'typing',
+                                  payload: { senderRole: 'admin', isTyping: e.target.value.trim().length > 0 },
+                                });
+                              }
+                            }}
                             placeholder="Message assigned staff..."
                             className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
                           />
+                          <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 bg-white hover:bg-slate-50 cursor-pointer inline-flex items-center gap-2">
+                            <FaPaperclip />
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => setAdminChatAttachmentFile(e.target.files?.[0] || null)}
+                            />
+                          </label>
                           <button
                             onClick={sendAdminChatMessage}
-                            disabled={sendingAdminChat}
+                            disabled={sendingAdminChat || uploadingAdminAttachment}
                             className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 px-4 py-2 text-sm font-semibold text-white"
                           >
-                            {sendingAdminChat ? 'Sending...' : 'Send'}
+                            {uploadingAdminAttachment ? 'Uploading...' : sendingAdminChat ? 'Sending...' : 'Send'}
                           </button>
                         </div>
+                        {adminChatAttachmentFile && (
+                          <p className="mt-2 text-xs text-slate-500">Attachment: {adminChatAttachmentFile.name}</p>
+                        )}
                       </div>
 
                       {/* Actions */}

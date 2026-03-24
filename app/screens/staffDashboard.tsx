@@ -22,6 +22,8 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaTrash,
+  FaPaperclip,
+  FaThumbtack,
 } from 'react-icons/fa';
 
 interface StaffDashboardProps {
@@ -80,6 +82,14 @@ type BookingStaffChatMessage = {
   sender_id: string;
   sender_role: 'admin' | 'staff';
   message: string;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  is_pinned?: boolean;
+  pinned_by?: string | null;
+  pinned_at?: string | null;
+  read_by_admin_at?: string | null;
+  read_by_staff_at?: string | null;
   created_at: string;
 };
 
@@ -99,6 +109,9 @@ const hasMissingColumnError = (error: unknown, columnName: string) => {
 
   return message.toLowerCase().includes(columnName.toLowerCase()) && message.toLowerCase().includes('does not exist');
 };
+
+const CHAT_BASE_SELECT = 'id, booking_id, sender_id, sender_role, message, created_at';
+const CHAT_ENHANCED_SELECT = `${CHAT_BASE_SELECT}, attachment_url, attachment_name, attachment_type, is_pinned, pinned_by, pinned_at, read_by_admin_at, read_by_staff_at`;
 
 const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const [jobs, setJobs] = useState<StaffJob[]>([]);
@@ -129,9 +142,13 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const [checklistByBooking, setChecklistByBooking] = useState<Record<number, BookingChecklistItem[]>>({});
   const [chatByBooking, setChatByBooking] = useState<Record<number, BookingStaffChatMessage[]>>({});
   const [chatDraftByBooking, setChatDraftByBooking] = useState<Record<number, string>>({});
+  const [chatAttachmentByBooking, setChatAttachmentByBooking] = useState<Record<number, File | null>>({});
   const [chatSendingForBookingId, setChatSendingForBookingId] = useState<number | null>(null);
+  const [chatUploadingForBookingId, setChatUploadingForBookingId] = useState<number | null>(null);
+  const [isAdminTypingByBooking, setIsAdminTypingByBooking] = useState<Record<number, boolean>>({});
   const [notifications, setNotifications] = useState<any[]>([]);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const chatChannelRef = useRef<any>(null);
 
   const addNotification = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     const notification = {
@@ -492,27 +509,173 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
   const fetchChatForJob = async (bookingId: number) => {
     const { data, error: chatError } = await supabase
       .from('booking_staff_chat_messages')
-      .select('id, booking_id, sender_id, sender_role, message, created_at')
+      .select(CHAT_ENHANCED_SELECT)
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: true });
 
+    let rows: BookingStaffChatMessage[] = [];
+
     if (chatError) {
+      const mayBeMissingFeatureColumns = [
+        'attachment_url',
+        'attachment_name',
+        'attachment_type',
+        'is_pinned',
+        'pinned_by',
+        'pinned_at',
+        'read_by_admin_at',
+        'read_by_staff_at',
+      ].some((column) => hasMissingColumnError(chatError, column));
+
+      if (!mayBeMissingFeatureColumns) {
+        return;
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('booking_staff_chat_messages')
+        .select(CHAT_BASE_SELECT)
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: true });
+
+      if (fallbackError) {
+        return;
+      }
+
+      rows = ((fallbackData || []) as BookingStaffChatMessage[]).map((row) => ({
+        ...row,
+        is_pinned: false,
+      }));
+    } else {
+      rows = (data || []) as BookingStaffChatMessage[];
+    }
+
+    setChatByBooking((prev) => ({
+      ...prev,
+      [bookingId]: rows,
+    }));
+
+    const unreadFromAdmin = rows.filter((row) => row.sender_role === 'admin' && !row.read_by_staff_at);
+    if (unreadFromAdmin.length > 0) {
+      const readAt = new Date().toISOString();
+      const { error: readUpdateError } = await supabase
+        .from('booking_staff_chat_messages')
+        .update({ read_by_staff_at: readAt })
+        .eq('booking_id', bookingId)
+        .eq('sender_role', 'admin')
+        .is('read_by_staff_at', null);
+
+      if (readUpdateError && !hasMissingColumnError(readUpdateError, 'read_by_staff_at')) {
+        console.error('Failed to mark staff read receipts:', readUpdateError);
+      }
+
+      setChatByBooking((prev) => ({
+        ...prev,
+        [bookingId]: (prev[bookingId] || []).map((row) =>
+          row.sender_role === 'admin' && !row.read_by_staff_at
+            ? { ...row, read_by_staff_at: readAt }
+            : row
+        ),
+      }));
+    }
+  };
+
+  const getStaffAccessToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new Error('Missing active session token. Please sign in again.');
+    }
+
+    return session.access_token;
+  };
+
+  const uploadStaffChatAttachment = async (bookingId: number, file: File) => {
+    const token = await getStaffAccessToken();
+    const formData = new FormData();
+    formData.append('booking_id', String(bookingId));
+    formData.append('file', file);
+
+    const response = await fetch('/api/chat-attachments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json?.error || 'Could not upload attachment.');
+    }
+
+    return {
+      attachment_url: String(json?.url || ''),
+      attachment_name: String(json?.name || file.name || 'attachment'),
+      attachment_type: String(json?.type || file.type || 'application/octet-stream'),
+    };
+  };
+
+  const togglePinChatMessage = async (bookingId: number, message: BookingStaffChatMessage) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const nextPinned = !message.is_pinned;
+    const payload = {
+      is_pinned: nextPinned,
+      pinned_by: nextPinned ? user?.id || null : null,
+      pinned_at: nextPinned ? new Date().toISOString() : null,
+    };
+
+    const { error: updateError } = await supabase
+      .from('booking_staff_chat_messages')
+      .update(payload)
+      .eq('id', message.id);
+
+    if (updateError) {
+      if (hasMissingColumnError(updateError, 'is_pinned') || hasMissingColumnError(updateError, 'pinned_at')) {
+        setError('Chat feature columns are missing. Run chat migration SQL to enable pinning.');
+        return;
+      }
+      setError(updateError.message || 'Could not update pinned message.');
       return;
     }
 
     setChatByBooking((prev) => ({
       ...prev,
-      [bookingId]: (data || []) as BookingStaffChatMessage[],
+      [bookingId]: (prev[bookingId] || []).map((row) => (row.id === message.id ? { ...row, ...payload } : row)),
     }));
   };
 
   const sendChatMessage = async (bookingId: number) => {
     const draft = String(chatDraftByBooking[bookingId] || '').trim();
-    if (!draft || !staffUserId) return;
+    const attachmentFile = chatAttachmentByBooking[bookingId];
+    if ((!draft && !attachmentFile) || !staffUserId) return;
 
     setChatSendingForBookingId(bookingId);
 
-    const { error: insertError } = await supabase
+    let attachmentPayload: {
+      attachment_url?: string;
+      attachment_name?: string;
+      attachment_type?: string;
+    } = {};
+
+    if (attachmentFile) {
+      setChatUploadingForBookingId(bookingId);
+      try {
+        attachmentPayload = await uploadStaffChatAttachment(bookingId, attachmentFile);
+      } catch (uploadError: any) {
+        setChatUploadingForBookingId(null);
+        setChatSendingForBookingId(null);
+        setError(uploadError?.message || 'Could not upload attachment.');
+        return;
+      }
+      setChatUploadingForBookingId(null);
+    }
+
+    const { data: insertedData, error: insertError } = await supabase
       .from('booking_staff_chat_messages')
       .insert([
         {
@@ -520,8 +683,11 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
           sender_id: staffUserId,
           sender_role: 'staff',
           message: draft,
+          ...attachmentPayload,
         },
-      ]);
+      ])
+      .select(CHAT_BASE_SELECT)
+      .single();
 
     setChatSendingForBookingId(null);
 
@@ -531,7 +697,24 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
     }
 
     setChatDraftByBooking((prev) => ({ ...prev, [bookingId]: '' }));
-    fetchChatForJob(bookingId);
+    setChatAttachmentByBooking((prev) => ({ ...prev, [bookingId]: null }));
+    if (insertedData) {
+      setChatByBooking((prev) => ({
+        ...prev,
+        [bookingId]: (prev[bookingId] || []).some((row) => row.id === insertedData.id)
+          ? (prev[bookingId] || [])
+          : [...(prev[bookingId] || []), insertedData as BookingStaffChatMessage],
+      }));
+    } else {
+      fetchChatForJob(bookingId);
+    }
+    if (chatChannelRef.current) {
+      void chatChannelRef.current.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { senderRole: 'staff', isTyping: false },
+      });
+    }
   };
 
   const acknowledgeJob = async (jobId: number) => {
@@ -724,16 +907,28 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
         filter: `booking_id=eq.${selectedJob.id}`,
       }, (payload) => {
         const newMessage = payload.new as BookingStaffChatMessage;
-        
-        // Update chat state
+
         setChatByBooking((prev) => ({
           ...prev,
-          [selectedJob.id]: [...(prev[selectedJob.id] || []), newMessage],
+          [selectedJob.id]: (prev[selectedJob.id] || []).some((row) => row.id === newMessage.id)
+            ? (prev[selectedJob.id] || [])
+            : [...(prev[selectedJob.id] || []), newMessage],
         }));
 
         // Show notification only if message is from admin
         if (newMessage.sender_role === 'admin') {
           addNotification(`New message from admin: "${newMessage.message.substring(0, 50)}${newMessage.message.length > 50 ? '...' : ''}"`, 'info');
+          const readAt = new Date().toISOString();
+          void supabase
+            .from('booking_staff_chat_messages')
+            .update({ read_by_staff_at: readAt })
+            .eq('id', newMessage.id)
+            .is('read_by_staff_at', null)
+            .then(({ error }) => {
+              if (error && !hasMissingColumnError(error, 'read_by_staff_at')) {
+                console.error('Failed to set realtime staff read receipt:', error);
+              }
+            });
         }
 
         // Auto-scroll to latest message
@@ -743,9 +938,30 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
           }
         }, 0);
       })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'booking_staff_chat_messages',
+        filter: `booking_id=eq.${selectedJob.id}`,
+      }, (payload) => {
+        const updated = payload.new as BookingStaffChatMessage;
+        setChatByBooking((prev) => ({
+          ...prev,
+          [selectedJob.id]: (prev[selectedJob.id] || []).map((row) => (row.id === updated.id ? { ...row, ...updated } : row)),
+        }));
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload?.senderRole === 'admin') {
+          setIsAdminTypingByBooking((prev) => ({ ...prev, [selectedJob.id]: Boolean(payload?.isTyping) }));
+        }
+      })
       .subscribe();
 
+    chatChannelRef.current = channel;
+
     return () => {
+      setIsAdminTypingByBooking((prev) => ({ ...prev, [selectedJob.id]: false }));
+      chatChannelRef.current = null;
       if (channel) {
         supabase.removeChannel(channel);
       }
@@ -830,12 +1046,13 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
       {notifications.length > 0 && (
         <div className="fixed top-6 right-6 z-50 space-y-2 max-w-md">
           {notifications.map((notif) => {
+            const notifType = String(notif.type || 'info') as 'info' | 'success' | 'warning' | 'error';
             const bgColor = {
               info: 'bg-blue-100 border-blue-300 text-blue-900',
               success: 'bg-emerald-100 border-emerald-300 text-emerald-900',
               warning: 'bg-amber-100 border-amber-300 text-amber-900',
               error: 'bg-red-100 border-red-300 text-red-900',
-            }[notif.type] || 'bg-slate-100 border-slate-300 text-slate-900';
+            }[notifType] || 'bg-slate-100 border-slate-300 text-slate-900';
 
             return (
               <div
@@ -1279,6 +1496,21 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
                 <p className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
                   <FaCommentDots className="inline mr-1" /> Staff/Admin Chat
                 </p>
+                {(chatByBooking[selectedJob.id] || []).some((message) => message.is_pinned) && (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-2">Pinned messages</p>
+                    <div className="space-y-2">
+                      {(chatByBooking[selectedJob.id] || [])
+                        .filter((message) => message.is_pinned)
+                        .map((message) => (
+                          <div key={`pinned-${message.id}`} className="text-xs text-slate-700 border-l-2 border-amber-300 pl-2">
+                            <p className="font-semibold">{message.sender_role}</p>
+                            <p>{message.message || message.attachment_name || 'Pinned attachment'}</p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
                 <div 
                   ref={chatMessagesRef}
                   className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 max-h-56 overflow-y-auto"
@@ -1288,34 +1520,88 @@ const StaffDashboard = ({ onLogout }: StaffDashboardProps) => {
                   ) : (
                     (chatByBooking[selectedJob.id] || []).map((message) => (
                       <div key={message.id} className={`rounded-lg px-3 py-2 text-sm ${message.sender_role === 'staff' ? 'bg-blue-100 text-blue-900 ml-6' : 'bg-white border border-slate-200 text-slate-700 mr-6'}`}>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide mb-1">{message.sender_role}</p>
-                        <p>{message.message}</p>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide">{message.sender_role}</p>
+                          <button
+                            type="button"
+                            onClick={() => togglePinChatMessage(selectedJob.id, message)}
+                            className={`text-xs ${message.is_pinned ? 'text-amber-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            title={message.is_pinned ? 'Unpin message' : 'Pin message'}
+                          >
+                            <FaThumbtack />
+                          </button>
+                        </div>
+                        {message.message ? <p>{message.message}</p> : null}
+                        {message.attachment_url && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                            {String(message.attachment_type || '').startsWith('image/') ? (
+                              <a href={message.attachment_url} target="_blank" rel="noreferrer" className="block">
+                                <img src={message.attachment_url} alt={message.attachment_name || 'Attachment'} className="max-h-40 rounded-md object-cover" />
+                              </a>
+                            ) : (
+                              <a href={message.attachment_url} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline">
+                                {message.attachment_name || 'Download attachment'}
+                              </a>
+                            )}
+                          </div>
+                        )}
                         <p className="text-[10px] text-slate-500 mt-1">{new Date(message.created_at).toLocaleString()}</p>
+                        {message.sender_role === 'staff' && (
+                          <p className="text-[10px] text-slate-500">
+                            {message.read_by_admin_at ? `Seen ${new Date(message.read_by_admin_at).toLocaleTimeString()}` : 'Sent'}
+                          </p>
+                        )}
                       </div>
                     ))
                   )}
                 </div>
+                {isAdminTypingByBooking[selectedJob.id] && (
+                  <p className="mt-2 text-xs text-slate-500">Admin is typing...</p>
+                )}
                 <div className="mt-2 flex gap-2">
                   <input
                     type="text"
                     value={chatDraftByBooking[selectedJob.id] || ''}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setChatDraftByBooking((prev) => ({
                         ...prev,
                         [selectedJob.id]: e.target.value,
-                      }))
-                    }
+                      }));
+                      if (chatChannelRef.current) {
+                        void chatChannelRef.current.send({
+                          type: 'broadcast',
+                          event: 'typing',
+                          payload: { senderRole: 'staff', isTyping: e.target.value.trim().length > 0 },
+                        });
+                      }
+                    }}
                     placeholder="Send a quick message to admin..."
                     className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
                   />
+                  <label className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 bg-white hover:bg-slate-50 cursor-pointer inline-flex items-center gap-2">
+                    <FaPaperclip />
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={(e) =>
+                        setChatAttachmentByBooking((prev) => ({
+                          ...prev,
+                          [selectedJob.id]: e.target.files?.[0] || null,
+                        }))
+                      }
+                    />
+                  </label>
                   <button
                     onClick={() => sendChatMessage(selectedJob.id)}
-                    disabled={chatSendingForBookingId === selectedJob.id}
+                    disabled={chatSendingForBookingId === selectedJob.id || chatUploadingForBookingId === selectedJob.id}
                     className="rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 px-4 py-2 text-sm font-semibold text-white"
                   >
-                    {chatSendingForBookingId === selectedJob.id ? 'Sending...' : 'Send'}
+                    {chatUploadingForBookingId === selectedJob.id ? 'Uploading...' : chatSendingForBookingId === selectedJob.id ? 'Sending...' : 'Send'}
                   </button>
                 </div>
+                {chatAttachmentByBooking[selectedJob.id] && (
+                  <p className="mt-2 text-xs text-slate-500">Attachment: {chatAttachmentByBooking[selectedJob.id]?.name}</p>
+                )}
               </div>
 
               {selectedJob.staff_completion_report && (
