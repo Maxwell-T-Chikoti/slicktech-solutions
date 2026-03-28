@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import supabase from '@/app/lib/supabaseClient';
 import AppAlertDialog from '@/app/components/AppAlertDialog';
-import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars, FaPaperclip, FaThumbtack } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars, FaPaperclip, FaThumbtack, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import AnalyticsScreen from './analytics';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -93,6 +93,22 @@ type StaffRecommendation = {
   locationCompletedCount: number;
   activeCount: number;
   completionRate: number;
+};
+
+type StaffWorkloadHeatmapRow = {
+  staffId: string;
+  staffName: string;
+  countsByDay: Record<string, number>;
+  totalOpenJobs: number;
+};
+
+type SmartAssignmentSuggestion = {
+  staffId: string;
+  staffName: string;
+  score: number;
+  completionRate: number;
+  activeCount: number;
+  topService: string;
 };
 
 const AI_DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -197,11 +213,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [showMobileTabs, setShowMobileTabs] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [newBookingAlert, setNewBookingAlert] = useState<BookingWithProfile | null>(null);
   const [selectedBookings, setSelectedBookings] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'staff' | 'activity' | 'reports' | 'settings' | 'services'>('dashboard');
   const [customers, setCustomers] = useState<any[]>([]);
+  const [selectedCustomerDetails, setSelectedCustomerDetails] = useState<any | null>(null);
+  const [exportingCustomerHistory, setExportingCustomerHistory] = useState(false);
+  const [exportingCustomerArchiveReport, setExportingCustomerArchiveReport] = useState(false);
   const [managedStaff, setManagedStaff] = useState<ManagedStaffAccount[]>([]);
   const [loadingManagedStaff, setLoadingManagedStaff] = useState(false);
   const [staffActionInProgressId, setStaffActionInProgressId] = useState<string | null>(null);
@@ -965,6 +985,483 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       });
     } catch (error: any) {
       showAlertDialog(error?.message || 'Could not export audit logs.', 'Export failed');
+    }
+  };
+
+  const exportActivityLogPDF = async () => {
+    try {
+      if (activityLog.length === 0) {
+        showAlertDialog('No activity logs available to export yet.', 'Nothing to export');
+        return;
+      }
+
+      const escapeHtml = (value: unknown) =>
+        String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+      const logsForExport = [...activityLog].slice(0, 500);
+      const categoryCount = new Set(logsForExport.map((item) => item.category || 'general')).size;
+      const sourceCount = new Set(logsForExport.map((item) => item.source || 'web')).size;
+      const periodStart = logsForExport[logsForExport.length - 1]?.timestamp;
+      const periodEnd = logsForExport[0]?.timestamp;
+
+      const pdfContent = document.createElement('div');
+      pdfContent.style.width = '210mm';
+      pdfContent.style.padding = '16mm';
+      pdfContent.style.fontFamily = 'Inter, Arial, sans-serif';
+      pdfContent.style.backgroundColor = '#ffffff';
+      pdfContent.style.color = '#0f172a';
+      pdfContent.style.position = 'absolute';
+      pdfContent.style.left = '-9999px';
+      pdfContent.style.top = '-9999px';
+
+      pdfContent.innerHTML = `
+        <div style="border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);">
+          <div style="background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%); color: #ffffff; padding: 22px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+            <div>
+              <img src="${SlickTechLogo.src}" alt="SlickTech logo" style="height: 46px; width: auto; margin-bottom: 8px;" />
+              <h1 style="margin: 0; font-size: 24px; letter-spacing: 0.5px;">Activity Log Audit Report</h1>
+              <p style="margin: 6px 0 0; font-size: 12px; opacity: 0.9;">SlickTech Solutions • Admin Dashboard</p>
+            </div>
+            <div style="text-align: right;">
+              <p style="margin: 0; font-size: 11px; opacity: 0.82; text-transform: uppercase; letter-spacing: 1px;">Generated</p>
+              <p style="margin: 4px 0 0; font-size: 14px; font-weight: 700;">${new Date().toLocaleString()}</p>
+            </div>
+          </div>
+
+          <div style="padding: 18px 22px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+              <div style="background: #ffffff; border: 1px solid #dbeafe; border-radius: 10px; padding: 10px 12px;">
+                <p style="margin: 0; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Total Entries</p>
+                <p style="margin: 6px 0 0; font-size: 20px; color: #0f172a; font-weight: 800;">${logsForExport.length}</p>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #dbeafe; border-radius: 10px; padding: 10px 12px;">
+                <p style="margin: 0; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Categories</p>
+                <p style="margin: 6px 0 0; font-size: 20px; color: #0f172a; font-weight: 800;">${categoryCount}</p>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #dbeafe; border-radius: 10px; padding: 10px 12px;">
+                <p style="margin: 0; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Sources</p>
+                <p style="margin: 6px 0 0; font-size: 20px; color: #0f172a; font-weight: 800;">${sourceCount}</p>
+              </div>
+              <div style="background: #ffffff; border: 1px solid #dbeafe; border-radius: 10px; padding: 10px 12px;">
+                <p style="margin: 0; font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Period</p>
+                <p style="margin: 6px 0 0; font-size: 11px; color: #0f172a; font-weight: 700; line-height: 1.35;">${periodStart ? new Date(periodStart).toLocaleDateString() : 'N/A'} - ${periodEnd ? new Date(periodEnd).toLocaleDateString() : 'N/A'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 14px 22px 22px;">
+            <h2 style="margin: 0 0 12px; font-size: 16px; color: #0f172a;">Activity Entries</h2>
+            <table style="width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+              <thead>
+                <tr style="background: #eff6ff; color: #1e3a8a;">
+                  <th style="text-align: left; padding: 8px; border-bottom: 1px solid #bfdbfe; width: 20%;">Timestamp</th>
+                  <th style="text-align: left; padding: 8px; border-bottom: 1px solid #bfdbfe; width: 45%;">Action</th>
+                  <th style="text-align: left; padding: 8px; border-bottom: 1px solid #bfdbfe; width: 12%;">Admin</th>
+                  <th style="text-align: left; padding: 8px; border-bottom: 1px solid #bfdbfe; width: 11%;">Category</th>
+                  <th style="text-align: left; padding: 8px; border-bottom: 1px solid #bfdbfe; width: 12%;">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${logsForExport.map((activity, index) => `
+                  <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: top;">${escapeHtml(new Date(activity.timestamp).toLocaleString())}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #0f172a; vertical-align: top; word-wrap: break-word;">${escapeHtml(activity.action)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: top;">${escapeHtml(activity.admin || 'System')}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: top;">${escapeHtml(activity.category || 'general')}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: top;">${escapeHtml(activity.source || 'web')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+            <p style="margin: 14px 0 0; font-size: 10px; color: #64748b;">
+              Generated by SlickTech Admin Dashboard for audit, compliance, and internal incident review.
+            </p>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(pdfContent);
+
+      try {
+        const canvas = await html2canvas(pdfContent, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          width: Math.ceil(pdfContent.getBoundingClientRect().width * 3.78),
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        pdf.save(`SlickTech_Activity_Log_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+        logActivity('Exported activity log audit report (PDF)', {
+          category: 'export',
+          source: 'admin-dashboard',
+          metadata: { format: 'pdf', entries: logsForExport.length },
+        });
+      } finally {
+        document.body.removeChild(pdfContent);
+      }
+    } catch (error: any) {
+      console.error('Activity log PDF export failed:', error);
+      showAlertDialog(error?.message || 'Could not export activity log PDF.', 'Export failed');
+    }
+  };
+
+  const exportSelectedCustomerHistoryPDF = async () => {
+    if (!selectedCustomerDetails) return;
+
+    try {
+      setExportingCustomerHistory(true);
+      const token = await getAdminAuthToken();
+      if (!token) {
+        showAlertDialog('Missing admin session. Please sign in again.', 'Export failed');
+        return;
+      }
+
+      const customerId = encodeURIComponent(String(selectedCustomerDetails.id || ''));
+      const customerEmail = encodeURIComponent(String(selectedCustomerDetails.email || ''));
+      const response = await fetch(`/api/admin/customers/history/export?customerId=${customerId}&customerEmail=${customerEmail}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || 'Failed to export customer history.');
+      }
+
+      const payload = await response.json();
+      const history = Array.isArray(payload?.history) ? payload.history : [];
+      const customer = payload?.customer || selectedCustomerDetails;
+
+      if (history.length === 0) {
+        showAlertDialog('No history found for this customer yet.', 'Nothing to export');
+        return;
+      }
+
+      const escapeHtml = (value: unknown) =>
+        String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+      const completedCount = history.filter((item: any) => item.status === 'Complete' || item.status === 'Confirmed').length;
+      const pendingCount = history.filter((item: any) => item.status === 'Pending').length;
+      const totalSpent = history
+        .filter((item: any) => item.status === 'Complete' || item.status === 'Confirmed')
+        .reduce((sum: number, item: any) => {
+          const amount = parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '') || '0');
+          return sum + (Number.isNaN(amount) ? 0 : amount);
+        }, 0);
+
+      const pdfContent = document.createElement('div');
+      pdfContent.style.width = '210mm';
+      pdfContent.style.padding = '16mm';
+      pdfContent.style.fontFamily = 'Inter, Arial, sans-serif';
+      pdfContent.style.backgroundColor = '#ffffff';
+      pdfContent.style.color = '#0f172a';
+      pdfContent.style.position = 'absolute';
+      pdfContent.style.left = '-9999px';
+      pdfContent.style.top = '-9999px';
+
+      pdfContent.innerHTML = `
+        <div style="border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);">
+          <div style="background: linear-gradient(135deg, #0f172a, #1d4ed8); color: #fff; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div>
+              <img src="${SlickTechLogo.src}" alt="SlickTech logo" style="height: 40px; width: auto; margin-bottom: 6px;" />
+              <h1 style="margin: 0; font-size: 22px;">Customer History Report</h1>
+              <p style="margin: 5px 0 0; font-size: 12px; opacity: .9;">Persistent export (includes archived records)</p>
+            </div>
+            <div style="text-align: right; font-size: 12px;">
+              <p style="margin: 0; opacity: .8; text-transform: uppercase; letter-spacing: .8px;">Generated</p>
+              <p style="margin: 4px 0 0; font-weight: 700;">${new Date().toLocaleString()}</p>
+            </div>
+          </div>
+
+          <div style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+            <p style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a;">${escapeHtml(customer?.name || `${customer?.first_name || ''} ${customer?.surname || ''}`.trim() || 'Customer')}</p>
+            <p style="margin: 4px 0 0; font-size: 12px; color: #475569;">${escapeHtml(customer?.email || 'No email available')}</p>
+          </div>
+
+          <div style="padding: 16px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; border-bottom: 1px solid #e2e8f0;">
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Bookings</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#0f172a;">${history.length}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Completed</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#059669;">${completedCount}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Pending</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#d97706;">${pendingCount}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Total Spent</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#1d4ed8;">${formatCAD(totalSpent)}</p></div>
+          </div>
+
+          <div style="padding: 12px 20px 20px;">
+            <table style="width:100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; border: 1px solid #e2e8f0;">
+              <thead>
+                <tr style="background:#eff6ff; color:#1e3a8a;">
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:9%;">Job ID</th>
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:23%;">Service</th>
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:18%;">Date & Time</th>
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:12%;">Status</th>
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:20%;">Assigned Staff</th>
+                  <th style="text-align:left; padding:8px; border-bottom:1px solid #bfdbfe; width:18%;">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${history.map((item: any, idx: number) => `
+                  <tr style="background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-weight:700;">#${escapeHtml(item.booking_id)}</td>
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.service)}</td>
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.date || '')}${item.time ? ` at ${escapeHtml(item.time)}` : ''}</td>
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.status)}</td>
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.assigned_staff_name || 'Unassigned')}</td>
+                    <td style="padding:7px; border-bottom:1px solid #e2e8f0; color:#1d4ed8; font-weight:700;">${escapeHtml(item.price || '0')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(pdfContent);
+      try {
+        const canvas = await html2canvas(pdfContent, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          width: Math.ceil(pdfContent.getBoundingClientRect().width * 3.78),
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        const safeName = String(customer?.name || customer?.email || 'customer-history').replace(/[^a-z0-9]+/gi, '_');
+        pdf.save(`SlickTech_Customer_History_${safeName}_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+        logActivity(`Exported customer history PDF for ${customer?.email || selectedCustomerDetails.email || 'customer'}`, {
+          category: 'export',
+          source: 'admin-dashboard',
+          targetType: 'customer',
+          targetId: selectedCustomerDetails.id,
+          metadata: {
+            format: 'pdf',
+            totalEntries: history.length,
+            includesArchived: true,
+          },
+        });
+      } finally {
+        document.body.removeChild(pdfContent);
+      }
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not export customer history PDF.', 'Export failed');
+    } finally {
+      setExportingCustomerHistory(false);
+    }
+  };
+
+  const exportCustomerArchiveReportPDF = async () => {
+    try {
+      setExportingCustomerArchiveReport(true);
+      const token = await getAdminAuthToken();
+      if (!token) {
+        showAlertDialog('Missing admin session. Please sign in again.', 'Export failed');
+        return;
+      }
+
+      const response = await fetch('/api/admin/customers/history/export?limit=50000', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || 'Failed to export customer archive report.');
+      }
+
+      const payload = await response.json();
+      const history = Array.isArray(payload?.history) ? payload.history : [];
+
+      if (history.length === 0) {
+        showAlertDialog('No customer history found in archive yet.', 'Nothing to export');
+        return;
+      }
+
+      const escapeHtml = (value: unknown) =>
+        String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+      const uniqueCustomers = new Set(history.map((item: any) => String(item.customer_email || item.customer_id || 'unknown'))).size;
+      const completedCount = history.filter((item: any) => item.status === 'Complete' || item.status === 'Confirmed').length;
+      const totalRevenue = history
+        .filter((item: any) => item.status === 'Complete' || item.status === 'Confirmed')
+        .reduce((sum: number, item: any) => {
+          const amount = parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '') || '0');
+          return sum + (Number.isNaN(amount) ? 0 : amount);
+        }, 0);
+
+      const pdfContent = document.createElement('div');
+      pdfContent.style.width = '210mm';
+      pdfContent.style.padding = '16mm';
+      pdfContent.style.fontFamily = 'Inter, Arial, sans-serif';
+      pdfContent.style.backgroundColor = '#ffffff';
+      pdfContent.style.color = '#0f172a';
+      pdfContent.style.position = 'absolute';
+      pdfContent.style.left = '-9999px';
+      pdfContent.style.top = '-9999px';
+
+      pdfContent.innerHTML = `
+        <div style="border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);">
+          <div style="background: linear-gradient(135deg, #0f172a, #1d4ed8); color: #fff; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div>
+              <img src="${SlickTechLogo.src}" alt="SlickTech logo" style="height: 40px; width: auto; margin-bottom: 6px;" />
+              <h1 style="margin: 0; font-size: 22px;">Customer Archive Report</h1>
+              <p style="margin: 5px 0 0; font-size: 12px; opacity: .9;">All customers (active + deleted profile snapshots)</p>
+            </div>
+            <div style="text-align: right; font-size: 12px;">
+              <p style="margin: 0; opacity: .8; text-transform: uppercase; letter-spacing: .8px;">Generated</p>
+              <p style="margin: 4px 0 0; font-weight: 700;">${new Date().toLocaleString()}</p>
+            </div>
+          </div>
+
+          <div style="padding: 16px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; border-bottom: 1px solid #e2e8f0;">
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Archived Jobs</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#0f172a;">${history.length}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Customers</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#1d4ed8;">${uniqueCustomers}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Completed</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#059669;">${completedCount}</p></div>
+            <div style="border: 1px solid #dbeafe; background: #fff; border-radius: 10px; padding: 8px 10px;"><p style="margin:0;font-size:10px;color:#64748b;text-transform:uppercase;">Completed Value</p><p style="margin:4px 0 0;font-size:18px;font-weight:800;color:#7c3aed;">${formatCAD(totalRevenue)}</p></div>
+          </div>
+
+          <div style="padding: 12px 20px 20px;">
+            <table style="width:100%; border-collapse: collapse; font-size: 9px; table-layout: fixed; border: 1px solid #e2e8f0;">
+              <thead>
+                <tr style="background:#eff6ff; color:#1e3a8a;">
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:8%;">Job ID</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:18%;">Customer</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:20%;">Email</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:18%;">Service</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:14%;">Date & Time</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:10%;">Status</th>
+                  <th style="text-align:left; padding:7px; border-bottom:1px solid #bfdbfe; width:12%;">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${history.map((item: any, idx: number) => `
+                  <tr style="background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#0f172a; font-weight:700;">#${escapeHtml(item.booking_id)}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.customer_name || 'Deleted Customer')}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.customer_email || 'N/A')}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.service || '')}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.date || '')}${item.time ? ` at ${escapeHtml(item.time)}` : ''}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#334155;">${escapeHtml(item.status || '')}</td>
+                    <td style="padding:6px; border-bottom:1px solid #e2e8f0; color:#1d4ed8; font-weight:700;">${escapeHtml(item.price || '0')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(pdfContent);
+      try {
+        const canvas = await html2canvas(pdfContent, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          width: Math.ceil(pdfContent.getBoundingClientRect().width * 3.78),
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        pdf.save(`SlickTech_All_Customers_Archive_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+        logActivity('Exported all-customers archive PDF report', {
+          category: 'export',
+          source: 'admin-dashboard',
+          targetType: 'customer',
+          metadata: {
+            format: 'pdf',
+            scope: 'all-customers',
+            totalEntries: history.length,
+            uniqueCustomers,
+            includesArchived: true,
+          },
+        });
+      } finally {
+        document.body.removeChild(pdfContent);
+      }
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not export customer archive PDF.', 'Export failed');
+    } finally {
+      setExportingCustomerArchiveReport(false);
     }
   };
 
@@ -2060,6 +2557,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const formatCAD = (amount: number) =>
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(amount || 0);
 
+  const parseBookingAmount = (booking: BookingWithProfile) => {
+    const raw = booking.service_price || booking.price || '0';
+    const amount = parseFloat(String(raw).replace(/[^0-9.]/g, '') || '0');
+    return Number.isNaN(amount) ? 0 : amount;
+  };
+
   const normalizeBookingDate = (rawDate: string) => {
     const parsed = new Date(rawDate);
     if (!Number.isNaN(parsed.getTime())) {
@@ -2291,6 +2794,89 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     return best;
   }, [selectedBooking, staffMembers, staffPerformanceById, staffUnavailability]);
+
+  const staffWorkloadHeatmap = useMemo(() => {
+    const days = AI_DAY_ORDER;
+    const rows: StaffWorkloadHeatmapRow[] = managedStaff.map((staff) => {
+      const countsByDay: Record<string, number> = {
+        Monday: 0,
+        Tuesday: 0,
+        Wednesday: 0,
+        Thursday: 0,
+        Friday: 0,
+        Saturday: 0,
+        Sunday: 0,
+      };
+
+      bookings.forEach((booking) => {
+        if (booking.assigned_staff_id !== staff.id) return;
+        if (booking.status === 'Complete' || booking.status === 'Rejected') return;
+
+        const d = new Date(booking.date);
+        if (Number.isNaN(d.getTime())) return;
+
+        const day = d.toLocaleDateString('en-US', { weekday: 'long' });
+        if (countsByDay[day] != null) {
+          countsByDay[day] += 1;
+        }
+      });
+
+      const totalOpenJobs = Object.values(countsByDay).reduce((sum, value) => sum + value, 0);
+      return {
+        staffId: staff.id,
+        staffName: `${staff.first_name} ${staff.surname}`.trim(),
+        countsByDay,
+        totalOpenJobs,
+      };
+    });
+
+    const maxCellValue = rows.reduce((max, row) => {
+      const rowMax = Math.max(...Object.values(row.countsByDay), 0);
+      return Math.max(max, rowMax);
+    }, 0);
+
+    return { days, rows, maxCellValue };
+  }, [bookings, managedStaff]);
+
+  const smartAssignmentSuggestions = useMemo<SmartAssignmentSuggestion[]>(() => {
+    return managedStaff
+      .filter((staff) => !staff.isDisabled)
+      .map((staff) => {
+        const summary = staffPerformanceById[staff.id] || {
+          assignedCount: 0,
+          completedCount: 0,
+          activeCount: 0,
+          pendingCount: 0,
+          rejectedCount: 0,
+          acknowledgedCount: 0,
+          notesCount: 0,
+          completionRate: 0,
+          totalRevenueCAD: 0,
+          averageCompletedValueCAD: 0,
+          topService: 'N/A',
+          lastCompletedAt: null,
+          jobs: [],
+          completedJobs: [],
+        } as StaffPerformanceSummary;
+
+        // Balanced scoring: reliability + low active load + completed experience.
+        const reliability = Math.min(45, summary.completionRate * 0.45);
+        const workload = Math.max(0, 35 - summary.activeCount * 7);
+        const experience = Math.min(20, summary.completedCount * 1.5);
+        const score = Math.round(reliability + workload + experience);
+
+        return {
+          staffId: staff.id,
+          staffName: `${staff.first_name} ${staff.surname}`.trim(),
+          score,
+          completionRate: summary.completionRate,
+          activeCount: summary.activeCount,
+          topService: summary.topService,
+        };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [managedStaff, staffPerformanceById]);
 
   const aiDemandInsights = React.useMemo(() => {
     const dayCounts: Record<string, number> = {
@@ -3027,7 +3613,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           <>
             {/* Header */}
             <div
-              className={`backdrop-blur-xl border-b px-6 py-8 sticky top-0 z-20 lg:pl-[300px] ${
+              className={`backdrop-blur-xl border-b px-6 py-8 sticky top-0 z-20 ${isSidebarCollapsed ? 'lg:pl-[120px]' : 'lg:pl-[300px]'} ${
                 theme === 'dark'
                   ? 'bg-gradient-to-r from-slate-950/95 via-slate-900/92 to-slate-950/95 border-slate-800'
                   : 'bg-gradient-to-r from-white/40 to-white/20 border-gray-200'
@@ -3406,40 +3992,57 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               )}
             </div>
 
-            <div className="pb-8 lg:pl-[280px]">
+            <div className={`pb-8 ${isSidebarCollapsed ? 'lg:pl-[108px]' : 'lg:pl-[280px]'}`}>
               <div className="grid grid-cols-1 gap-6">
-                <aside className="hidden lg:block fixed inset-y-0 left-0 z-30 w-[260px]">
+                <aside className={`hidden lg:block fixed inset-y-0 left-0 z-30 transition-all duration-300 ${isSidebarCollapsed ? 'w-[88px]' : 'w-[260px]'}`}>
                   <div
-                    className={`flex h-full flex-col border-r px-3 pb-6 pt-6 backdrop-blur ${
+                    className={`flex h-full flex-col border-r pb-6 pt-6 backdrop-blur ${isSidebarCollapsed ? 'px-2' : 'px-3'} ${
                       theme === 'dark'
                         ? 'border-slate-800 bg-slate-950/92'
                         : 'border-slate-200 bg-white/90'
                     }`}
                   >
+                    <div className={`mb-3 flex ${isSidebarCollapsed ? 'justify-center' : 'justify-end'}`}>
+                      <button
+                        onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                          theme === 'dark'
+                            ? 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                      >
+                        {isSidebarCollapsed ? <FaChevronRight className="text-sm" /> : <FaChevronLeft className="text-sm" />}
+                      </button>
+                    </div>
                     <div
-                      className={`mb-4 rounded-xl border px-3 py-3 ${
+                      className={`mb-4 rounded-xl border py-3 ${isSidebarCollapsed ? 'px-2' : 'px-3'} ${
                         theme === 'dark'
                           ? 'border-slate-700 bg-slate-900/80'
                           : 'border-slate-300 bg-slate-200/80'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                         <div className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg shadow-sm ${theme === 'dark' ? 'bg-slate-800' : 'bg-white'}`}>
                           <Image src={SlickTechLogo} alt="SlickTech Solutions logo" className="h-12 w-12 object-contain" />
                         </div>
-                        <div>
-                          <p className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>Company</p>
-                          <p className={`text-sm font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>SlickTech Solutions</p>
-                        </div>
+                        {!isSidebarCollapsed && (
+                          <div>
+                            <p className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>Company</p>
+                            <p className={`text-sm font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>SlickTech Solutions</p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <p className="px-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Admin Navigation</p>
+                    {!isSidebarCollapsed && <p className="px-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Admin Navigation</p>}
                     <nav className="mt-2 space-y-1" aria-label="Admin dashboard sections">
                       {ADMIN_TABS.map((tab) => (
                         <button
                           key={tab.id}
                           onClick={() => setActiveTab(tab.id as any)}
-                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
+                          title={tab.label}
+                          className={`flex w-full items-center rounded-lg py-2 text-sm font-semibold transition-all ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3 text-left'} ${
                             activeTab === tab.id
                               ? 'bg-blue-600 text-white shadow'
                               : theme === 'dark'
@@ -3447,49 +4050,50 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                               : 'text-slate-700 hover:bg-slate-100'
                           }`}
                         >
-                          <tab.icon />
-                          {tab.label}
+                          <tab.icon className={isSidebarCollapsed ? 'text-lg' : 'text-base'} />
+                          {!isSidebarCollapsed && tab.label}
                         </button>
                       ))}
                     </nav>
 
                     <div className={`mt-auto border-t pt-4 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}>
-                      <p className={`px-2 text-xs font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-slate-500' : 'text-slate-500'}`}>Quick Actions</p>
+                      {!isSidebarCollapsed && <p className={`px-2 text-xs font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-slate-500' : 'text-slate-500'}`}>Quick Actions</p>}
                       <div className="mt-2 space-y-2">
                         <button
                           onClick={() => setShowSettings(!showSettings)}
-                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                          title="Settings"
+                          className={`flex w-full items-center rounded-lg py-2 text-sm font-semibold transition ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3 text-left'} ${
                             theme === 'dark'
                               ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-slate-100'
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
-                          title="Settings"
                         >
-                          <FaCog />
-                          Settings
+                          <FaCog className={isSidebarCollapsed ? 'text-lg' : 'text-base'} />
+                          {!isSidebarCollapsed && 'Settings'}
                         </button>
                         <button
                           onClick={toggleTheme}
-                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                          className={`flex w-full items-center rounded-lg py-2 text-sm font-semibold transition ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3 text-left'} ${
                             theme === 'dark'
                               ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-slate-100'
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                           title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
                         >
-                          {theme === 'light' ? <FaMoon /> : <FaSun />}
-                          {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                          {theme === 'light' ? <FaMoon className={isSidebarCollapsed ? 'text-lg' : 'text-base'} /> : <FaSun className={isSidebarCollapsed ? 'text-lg' : 'text-base'} />}
+                          {!isSidebarCollapsed && (theme === 'light' ? 'Dark Mode' : 'Light Mode')}
                         </button>
                         <button
                           onClick={onLogout}
-                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                          title="Logout"
+                          className={`flex w-full items-center rounded-lg py-2 text-sm font-semibold transition ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3 text-left'} ${
                             theme === 'dark'
                               ? 'bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:text-red-200'
                               : 'bg-red-50 text-red-700 hover:bg-red-100'
                           }`}
                         >
-                          <FaTimes />
-                          Logout
+                          <FaTimes className={isSidebarCollapsed ? 'text-lg' : 'text-base'} />
+                          {!isSidebarCollapsed && 'Logout'}
                         </button>
                       </div>
                     </div>
@@ -3858,7 +4462,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 <h2 className={`text-2xl font-bold mb-8 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>👥 Customer Management</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {customers.map((customer) => (
-                    <div key={customer.id} className={`backdrop-blur-xl rounded-2xl border p-6 hover:shadow-lg transition-all ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/60' : 'bg-white/40 border-gray-200 hover:bg-white/60'}`}>
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onClick={() => setSelectedCustomerDetails(customer)}
+                      className={`w-full text-left backdrop-blur-xl rounded-2xl border p-6 hover:shadow-lg transition-all cursor-pointer ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/60' : 'bg-white/40 border-gray-200 hover:bg-white/60'}`}
+                    >
                       <div className="flex items-center gap-4 mb-4">
                         <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                           {customer.first_name?.[0]}{customer.surname?.[0]}
@@ -3882,9 +4491,122 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           <span className={`font-semibold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>${customer.totalSpent.toFixed(2)}</span>
                         </div>
                       </div>
-                    </div>
+                      <p className={`mt-4 text-xs font-semibold ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>Click to view full customer history</p>
+                    </button>
                   ))}
                 </div>
+
+                {selectedCustomerDetails && (() => {
+                  const customerBookings = bookings
+                    .filter((booking) => booking.user_id === selectedCustomerDetails.id)
+                    .sort((a, b) => {
+                      const aTime = new Date(`${a.date} ${a.time || ''}`).getTime() || new Date(a.date).getTime() || 0;
+                      const bTime = new Date(`${b.date} ${b.time || ''}`).getTime() || new Date(b.date).getTime() || 0;
+                      return bTime - aTime;
+                    });
+
+                  const completedBookings = customerBookings.filter((booking) => booking.status === 'Complete' || booking.status === 'Confirmed');
+                  const pendingBookings = customerBookings.filter((booking) => booking.status === 'Pending');
+                  const totalSpent = completedBookings.reduce((sum, booking) => sum + parseBookingAmount(booking), 0);
+
+                  return (
+                    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm p-4 flex items-center justify-center">
+                      <div className={`w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-2xl border shadow-2xl ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                        <div className={`sticky top-0 z-10 flex items-center justify-between border-b px-6 py-4 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                          <div>
+                            <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
+                              {selectedCustomerDetails.first_name} {selectedCustomerDetails.surname}
+                            </h3>
+                            <p className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{selectedCustomerDetails.email}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={exportSelectedCustomerHistoryPDF}
+                              disabled={exportingCustomerHistory}
+                              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-blue-300"
+                            >
+                              <FaFilePdf className="text-xs" />
+                              {exportingCustomerHistory ? 'Exporting...' : 'Export PDF'}
+                            </button>
+                            <button
+                              onClick={() => setSelectedCustomerDetails(null)}
+                              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${theme === 'dark' ? 'border-slate-600 text-slate-200 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className={`rounded-xl p-4 ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Total Bookings</p>
+                              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{customerBookings.length}</p>
+                            </div>
+                            <div className={`rounded-xl p-4 ${theme === 'dark' ? 'bg-emerald-900/30' : 'bg-emerald-100'}`}>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-emerald-300' : 'text-emerald-700'}`}>Completed</p>
+                              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-emerald-300' : 'text-emerald-800'}`}>{completedBookings.length}</p>
+                            </div>
+                            <div className={`rounded-xl p-4 ${theme === 'dark' ? 'bg-amber-900/30' : 'bg-amber-100'}`}>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-amber-300' : 'text-amber-700'}`}>Pending</p>
+                              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-amber-300' : 'text-amber-800'}`}>{pendingBookings.length}</p>
+                            </div>
+                            <div className={`rounded-xl p-4 ${theme === 'dark' ? 'bg-blue-900/30' : 'bg-blue-100'}`}>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>Total Spent</p>
+                              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-blue-300' : 'text-blue-800'}`}>{formatCAD(totalSpent)}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <h4 className={`text-lg font-bold mb-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Booking History</h4>
+                            {customerBookings.length === 0 ? (
+                              <p className={`rounded-xl border p-4 text-sm ${theme === 'dark' ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-gray-200 bg-slate-50 text-slate-600'}`}>
+                                No bookings found for this customer yet.
+                              </p>
+                            ) : (
+                              <div className={`overflow-x-auto rounded-xl border ${theme === 'dark' ? 'border-slate-700' : 'border-gray-200'}`}>
+                                <table className="w-full text-sm">
+                                  <thead className={theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-700'}>
+                                    <tr>
+                                      <th className="px-3 py-2 text-left">Job ID</th>
+                                      <th className="px-3 py-2 text-left">Service</th>
+                                      <th className="px-3 py-2 text-left">Date & Time</th>
+                                      <th className="px-3 py-2 text-left">Status</th>
+                                      <th className="px-3 py-2 text-left">Assigned Staff</th>
+                                      <th className="px-3 py-2 text-left">Price</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {customerBookings.map((booking) => (
+                                      <tr key={booking.id} className={theme === 'dark' ? 'border-t border-slate-700' : 'border-t border-gray-100'}>
+                                        <td className={`px-3 py-2 font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>#{booking.id}</td>
+                                        <td className={`px-3 py-2 ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>{booking.service}</td>
+                                        <td className={`px-3 py-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{booking.date} {booking.time ? `at ${booking.time}` : ''}</td>
+                                        <td className="px-3 py-2">
+                                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                                            booking.status === 'Complete' || booking.status === 'Confirmed'
+                                              ? theme === 'dark' ? 'bg-emerald-900/50 text-emerald-200' : 'bg-emerald-100 text-emerald-700'
+                                              : booking.status === 'Pending'
+                                              ? theme === 'dark' ? 'bg-amber-900/50 text-amber-200' : 'bg-amber-100 text-amber-700'
+                                              : theme === 'dark' ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-700'
+                                          }`}>
+                                            {booking.status}
+                                          </span>
+                                        </td>
+                                        <td className={`px-3 py-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>{booking.staff_name || 'Unassigned'}</td>
+                                        <td className={`px-3 py-2 font-semibold ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>{formatCAD(parseBookingAmount(booking))}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -3899,6 +4621,96 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <FaSync /> Refresh Staff
                   </button>
                 </div>
+
+                {!loadingManagedStaff && managedStaff.length > 0 && (
+                  <div className="mb-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div className={`xl:col-span-2 rounded-2xl border p-5 ${theme === 'dark' ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-white/80'}`}>
+                      <div className="mb-4 flex items-center justify-between">
+                        <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Staff Workload Heatmap</h3>
+                        <span className={`text-xs font-semibold ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Open jobs by weekday</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[760px] text-sm">
+                          <thead>
+                            <tr className={theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}>
+                              <th className="px-3 py-2 text-left">Staff</th>
+                              {staffWorkloadHeatmap.days.map((day) => (
+                                <th key={day} className="px-2 py-2 text-center text-xs uppercase tracking-wide">{day.slice(0, 3)}</th>
+                              ))}
+                              <th className="px-3 py-2 text-center">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {staffWorkloadHeatmap.rows.map((row) => (
+                              <tr key={row.staffId} className={theme === 'dark' ? 'border-t border-slate-700' : 'border-t border-slate-200'}>
+                                <td className={`px-3 py-2 font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{row.staffName}</td>
+                                {staffWorkloadHeatmap.days.map((day) => {
+                                  const value = row.countsByDay[day] || 0;
+                                  const max = staffWorkloadHeatmap.maxCellValue || 1;
+                                  const ratio = value / max;
+                                  const cellClass =
+                                    value === 0
+                                      ? theme === 'dark'
+                                        ? 'bg-slate-800 text-slate-400'
+                                        : 'bg-slate-100 text-slate-500'
+                                      : ratio >= 0.75
+                                      ? theme === 'dark'
+                                        ? 'bg-red-900/60 text-red-200'
+                                        : 'bg-red-100 text-red-700'
+                                      : ratio >= 0.45
+                                      ? theme === 'dark'
+                                        ? 'bg-amber-900/50 text-amber-200'
+                                        : 'bg-amber-100 text-amber-700'
+                                      : theme === 'dark'
+                                      ? 'bg-emerald-900/50 text-emerald-200'
+                                      : 'bg-emerald-100 text-emerald-700';
+
+                                  return (
+                                    <td key={`${row.staffId}-${day}`} className="px-2 py-2 text-center">
+                                      <span className={`inline-flex min-w-[2rem] justify-center rounded-md px-2 py-1 text-xs font-bold ${cellClass}`}>{value}</span>
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-3 py-2 text-center">
+                                  <span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${theme === 'dark' ? 'bg-blue-900/50 text-blue-200' : 'bg-blue-100 text-blue-700'}`}>{row.totalOpenJobs}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs">
+                        <span className={`inline-flex items-center gap-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}><span className={`h-3 w-3 rounded ${theme === 'dark' ? 'bg-emerald-900/50' : 'bg-emerald-100'}`}></span>Light load</span>
+                        <span className={`inline-flex items-center gap-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}><span className={`h-3 w-3 rounded ${theme === 'dark' ? 'bg-amber-900/50' : 'bg-amber-100'}`}></span>Medium load</span>
+                        <span className={`inline-flex items-center gap-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}><span className={`h-3 w-3 rounded ${theme === 'dark' ? 'bg-red-900/60' : 'bg-red-100'}`}></span>High load</span>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-2xl border p-5 ${theme === 'dark' ? 'border-slate-700 bg-slate-900/70' : 'border-slate-200 bg-white/80'}`}>
+                      <h3 className={`text-lg font-bold mb-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Smart Assignment Suggestions</h3>
+                      <div className="space-y-3">
+                        {smartAssignmentSuggestions.map((suggestion, index) => (
+                          <div key={suggestion.staffId} className={`rounded-xl border p-3 ${theme === 'dark' ? 'border-slate-700 bg-slate-800/70' : 'border-slate-200 bg-slate-50/90'}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>#{index + 1} {suggestion.staffName}</p>
+                                <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Top service: {suggestion.topService}</p>
+                              </div>
+                              <span className={`rounded-md px-2 py-1 text-xs font-bold ${theme === 'dark' ? 'bg-emerald-900/50 text-emerald-200' : 'bg-emerald-100 text-emerald-700'}`}>{suggestion.score}/100</span>
+                            </div>
+                            <div className={`mt-2 h-2 w-full overflow-hidden rounded-full ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                              <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{ width: `${Math.max(5, Math.min(100, suggestion.score))}%` }} />
+                            </div>
+                            <div className={`mt-2 flex items-center justify-between text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                              <span>Completion: {suggestion.completionRate}%</span>
+                              <span>Active jobs: {suggestion.activeCount}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {loadingManagedStaff ? (
                   <div className="rounded-2xl border border-gray-200 bg-white/70 p-8 text-slate-600">Loading staff accounts...</div>
@@ -4315,6 +5127,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               <div className="px-6 py-12">
                 <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-2xl font-bold text-slate-900">📝 Activity Log</h2>
+                  <button
+                    onClick={exportActivityLogPDF}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    <FaFilePdf className="text-xs" />
+                    Export Activity PDF
+                  </button>
                 </div>
                 <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
                   <div className="max-h-96 overflow-y-auto">
@@ -4382,6 +5201,18 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   </div>
 
                   <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">Activity Log PDF</h3>
+                    <p className="mt-1 text-sm text-slate-600">Export a styled, branded activity log report with logo, summary metrics, and formatted audit entries.</p>
+                    <button
+                      onClick={exportActivityLogPDF}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                    >
+                      <FaFilePdf className="text-xs" />
+                      Download Activity Log PDF
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
                     <h3 className="text-lg font-bold text-slate-900">Bookings PDF</h3>
                     <p className="mt-1 text-sm text-slate-600">Download the bookings report in printable PDF format.</p>
                     <button
@@ -4390,6 +5221,19 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     >
                       <FaFilePdf className="text-xs" />
                       Export Bookings PDF
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">Customer Archive PDF</h3>
+                    <p className="mt-1 text-sm text-slate-600">Export full customer booking history from archive, including records retained after account deletion.</p>
+                    <button
+                      onClick={exportCustomerArchiveReportPDF}
+                      disabled={exportingCustomerArchiveReport}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:bg-cyan-300"
+                    >
+                      <FaFilePdf className="text-xs" />
+                      {exportingCustomerArchiveReport ? 'Exporting...' : 'Download Customer Archive PDF'}
                     </button>
                   </div>
 

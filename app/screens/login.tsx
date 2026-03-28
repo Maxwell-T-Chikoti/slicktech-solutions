@@ -37,9 +37,54 @@ const LoginScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'email' | 'password', string>>>({});
   const [showPassword, setShowPassword] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [isTwoFactorEnrollment, setIsTwoFactorEnrollment] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [mfaFactorId, setMfaFactorId] = useState('');
+  const [mfaChallengeId, setMfaChallengeId] = useState('');
+  const [mfaQrCode, setMfaQrCode] = useState('');
+  const [mfaSecret, setMfaSecret] = useState('');
+  const [pendingLoginContext, setPendingLoginContext] = useState<{
+    role: 'user' | 'admin' | 'staff';
+    profile: any;
+  } | null>(null);
 
   const mapToAppRole = (dbRole: string | null | undefined): 'user' | 'admin' | 'staff' => {
     return dbRole === 'admin' ? 'admin' : dbRole === 'staff' ? 'staff' : 'user';
+  };
+
+  const resetTwoFactorState = () => {
+    setRequiresTwoFactor(false);
+    setIsTwoFactorEnrollment(false);
+    setTwoFactorCode('');
+    setMfaFactorId('');
+    setMfaChallengeId('');
+    setMfaQrCode('');
+    setMfaSecret('');
+    setPendingLoginContext(null);
+  };
+
+  const completeLogin = (role: 'user' | 'admin' | 'staff', profileData: any) => {
+    if (role === 'user' || role === 'staff') {
+      const userSession = {
+        id: profileData.id,
+        email: profileData.email,
+        first_name: profileData.first_name,
+        surname: profileData.surname,
+        phone: profileData.phone,
+        location: profileData.location,
+        role,
+        loggedIn: true,
+        loginTime: new Date().toISOString(),
+      };
+      sessionStorage.setItem('slicktech_user', JSON.stringify(userSession));
+    } else {
+      sessionStorage.removeItem('slicktech_user');
+    }
+
+    setUserRole(role);
+    setIsLoggedIn(true);
+    resetTwoFactorState();
   };
 
   useEffect(() => {
@@ -78,7 +123,21 @@ const LoginScreen = () => {
         return;
       }
 
-      setUserRole(mapToAppRole(profileData.role));
+      const role = mapToAppRole(profileData.role);
+      if (role === 'admin' || role === 'staff') {
+        const mfaApi = (supabase.auth as any)?.mfa;
+        if (mfaApi?.getAuthenticatorAssuranceLevel) {
+          const assurance = await mfaApi.getAuthenticatorAssuranceLevel();
+          const currentAal = String(assurance?.data?.currentLevel || '').toLowerCase();
+          if (currentAal !== 'aal2') {
+            await supabase.auth.signOut();
+            setError('Two-factor verification is required for admin/staff access. Please sign in again.');
+            return;
+          }
+        }
+      }
+
+      setUserRole(role);
       setIsLoggedIn(true);
     };
 
@@ -148,31 +207,137 @@ const LoginScreen = () => {
 
       const role = mapToAppRole(profileData.role);
 
-      // Create user session in sessionStorage (tab-scoped)
-      if (role === 'user' || role === 'staff') {
-        const userSession = {
-          id: profileData.id,
-          email: profileData.email,
-          first_name: profileData.first_name,
-          surname: profileData.surname,
-          phone: profileData.phone,
-          location: profileData.location,
-          role,
-          loggedIn: true,
-          loginTime: new Date().toISOString()
-        };
-        sessionStorage.setItem('slicktech_user', JSON.stringify(userSession));
-      } else {
-        sessionStorage.removeItem('slicktech_user');
+      if (role === 'admin' || role === 'staff') {
+        const mfaApi = (supabase.auth as any)?.mfa;
+        if (!mfaApi?.listFactors || !mfaApi?.challenge || !mfaApi?.verify) {
+          await supabase.auth.signOut();
+          setError('Two-factor authentication is required for admin and staff accounts, but MFA is not configured in this environment.');
+          setLoading(false);
+          return;
+        }
+
+        const factorsResponse = await mfaApi.listFactors();
+        const totpFactors = Array.isArray(factorsResponse?.data?.totp)
+          ? factorsResponse.data.totp
+          : Array.isArray(factorsResponse?.data?.all)
+          ? factorsResponse.data.all.filter((factor: any) => String(factor?.factor_type || '').toLowerCase() === 'totp')
+          : [];
+        const verifiedFactor = totpFactors.find((factor: any) => String(factor?.status || '').toLowerCase() === 'verified');
+
+        if (!verifiedFactor?.id) {
+          const enrollResponse = await mfaApi.enroll({
+            factorType: 'totp',
+            friendlyName: `${role.toUpperCase()}-${new Date().toISOString().slice(0, 10)}`,
+            issuer: 'SlickTech Solutions',
+          });
+
+          const enrolledFactorId = String(enrollResponse?.data?.id || '');
+          const qrPayload = String(enrollResponse?.data?.totp?.qr_code || '');
+          const secretPayload = String(enrollResponse?.data?.totp?.secret || '');
+
+          if (!enrolledFactorId) {
+            await supabase.auth.signOut();
+            setError('Could not initialize two-factor enrollment. Please retry.');
+            setLoading(false);
+            return;
+          }
+
+          const challengeResponse = await mfaApi.challenge({ factorId: enrolledFactorId });
+          const challengeId = challengeResponse?.data?.id || challengeResponse?.data?.challengeId || '';
+          if (!challengeId) {
+            await supabase.auth.signOut();
+            setError('Could not start two-factor enrollment challenge. Please retry.');
+            setLoading(false);
+            return;
+          }
+
+          setPendingLoginContext({ role, profile: profileData });
+          setMfaFactorId(enrolledFactorId);
+          setMfaChallengeId(String(challengeId));
+          setMfaQrCode(qrPayload);
+          setMfaSecret(secretPayload);
+          setRequiresTwoFactor(true);
+          setIsTwoFactorEnrollment(true);
+          setTwoFactorCode('');
+          setError(null);
+          setLoading(false);
+          return;
+        }
+
+        const challengeResponse = await mfaApi.challenge({ factorId: verifiedFactor.id });
+        const challengeId = challengeResponse?.data?.id || challengeResponse?.data?.challengeId || '';
+        if (!challengeId) {
+          await supabase.auth.signOut();
+          setError('Could not start two-factor verification challenge. Please retry.');
+          setLoading(false);
+          return;
+        }
+
+        setPendingLoginContext({ role, profile: profileData });
+        setMfaFactorId(String(verifiedFactor.id));
+        setMfaChallengeId(String(challengeId));
+        setRequiresTwoFactor(true);
+        setIsTwoFactorEnrollment(false);
+        setTwoFactorCode('');
+        setError(null);
+        setLoading(false);
+        return;
       }
 
-      // Success!
-      setUserRole(role);
-      setIsLoggedIn(true);
+      completeLogin(role, profileData);
       setLoading(false);
     } catch (err) {
       console.error('Login error:', err);
       setError('Login failed due to a temporary issue. Please retry in a moment.');
+      setLoading(false);
+    }
+  };
+
+  const handleTwoFactorVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const code = twoFactorCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the 6-digit verification code from your authenticator app.');
+      return;
+    }
+
+    if (!pendingLoginContext || !mfaFactorId || !mfaChallengeId) {
+      setError('Two-factor session expired. Please sign in again.');
+      resetTwoFactorState();
+      await supabase.auth.signOut();
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const mfaApi = (supabase.auth as any)?.mfa;
+      if (!mfaApi?.verify) {
+        throw new Error('MFA verification is unavailable in this environment.');
+      }
+
+      const verifyResponse = await mfaApi.verify({
+        factorId: mfaFactorId,
+        challengeId: mfaChallengeId,
+        code,
+      });
+
+      if (verifyResponse?.error) {
+        throw verifyResponse.error;
+      }
+
+      completeLogin(pendingLoginContext.role, pendingLoginContext.profile);
+    } catch (err: any) {
+      const msg = String(err?.message || '').toLowerCase();
+      if (msg.includes('invalid')) {
+        setError('Invalid 2FA code. Please try again.');
+      } else if (msg.includes('expired')) {
+        setError('2FA code expired. Please sign in again to request a new challenge.');
+      } else {
+        setError(err?.message || 'Could not verify two-factor code.');
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -187,6 +352,7 @@ const LoginScreen = () => {
     setShowPassword(false);
     setLoading(false);
     setIsForgotPassword(false);
+    resetTwoFactorState();
     setShowInactivityWarning(false);
     setCountdownSeconds(30);
     if (reason === 'inactivity') {
@@ -346,8 +512,36 @@ const LoginScreen = () => {
             </div>
           )}
 
-          <form className="space-y-6" onSubmit={handleLogin}>
+          <form className="space-y-6" onSubmit={requiresTwoFactor ? handleTwoFactorVerification : handleLogin}>
+            {requiresTwoFactor && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                <p className="font-semibold">{isTwoFactorEnrollment ? 'Set up two-factor authentication' : 'Two-factor verification required'}</p>
+                <p className="mt-1">{isTwoFactorEnrollment ? 'Scan the QR code with your authenticator app, then enter the 6-digit code to finish setup.' : 'Enter the 6-digit code from your authenticator app to continue.'}</p>
+              </div>
+            )}
+
+            {requiresTwoFactor && isTwoFactorEnrollment && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Authenticator QR Code</p>
+                <div className="flex justify-center">
+                  {mfaQrCode.startsWith('<svg') ? (
+                    <div className="rounded-lg border border-slate-200 bg-white p-2" dangerouslySetInnerHTML={{ __html: mfaQrCode }} />
+                  ) : mfaQrCode ? (
+                    <img src={mfaQrCode} alt="2FA QR code" className="h-48 w-48 rounded-lg border border-slate-200 bg-white p-2" />
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">QR preview unavailable. Use the manual setup key below.</div>
+                  )}
+                </div>
+                {mfaSecret && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-600">Manual setup key</p>
+                    <p className="mt-1 break-all font-mono text-xs font-semibold text-slate-800">{mfaSecret}</p>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Email Field */}
+            {!requiresTwoFactor && (
             <div className="group">
               <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Email Address</label>
               <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
@@ -370,8 +564,10 @@ const LoginScreen = () => {
               </div>
               {fieldErrors.email && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.email}</p>}
             </div>
+            )}
 
             {/* Password Field */}
+            {!requiresTwoFactor && (
             <div className="group">
               <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Password</label>
               <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
@@ -399,8 +595,30 @@ const LoginScreen = () => {
               </div>
               {fieldErrors.password && <p className="mt-2 text-xs font-semibold text-red-600">{fieldErrors.password}</p>}
             </div>
+            )}
 
-            <div className="flex items-center justify-end text-sm">
+            {requiresTwoFactor && (
+              <div className="group">
+                <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">{isTwoFactorEnrollment ? 'Enter code from newly added authenticator' : 'Authenticator Code'}</label>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 hover:border-blue-300 focus-within:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md">
+                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400">
+                    <FaLock />
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="w-full pl-12 pr-4 py-4 outline-none text-sm tracking-[0.35em] font-bold text-slate-700 placeholder-slate-400 rounded-xl bg-transparent"
+                  />
+                </div>
+              </div>
+            )}
+
+            {!requiresTwoFactor && <div className="flex items-center justify-end text-sm">
               <button 
                 type="button"
                 onClick={() => setIsForgotPassword(true)}
@@ -408,7 +626,23 @@ const LoginScreen = () => {
               >
                 Forgot Password?
               </button>
-            </div>
+            </div>}
+
+            {requiresTwoFactor && (
+              <div className="flex items-center justify-end text-sm">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    resetTwoFactorState();
+                    await supabase.auth.signOut();
+                    setError(isTwoFactorEnrollment ? 'Two-factor setup cancelled. Please sign in again.' : 'Two-factor verification cancelled. Please sign in again.');
+                  }}
+                  className="text-slate-600 hover:text-slate-800 font-medium transition-colors hover:underline"
+                >
+                  Cancel and sign in again
+                </button>
+              </div>
+            )}
 
             <button 
               type="submit"
@@ -418,10 +652,10 @@ const LoginScreen = () => {
               {loading ? (
                 <div className="flex items-center justify-center">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Signing In...
+                  {requiresTwoFactor ? 'Verifying...' : 'Signing In...'}
                 </div>
               ) : (
-                "Sign In"
+                requiresTwoFactor ? 'Verify 2FA' : 'Sign In'
               )}
             </button>
           </form>
