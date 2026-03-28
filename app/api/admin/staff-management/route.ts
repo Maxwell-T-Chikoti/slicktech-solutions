@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getRequestIp, writeAuditLog } from '@/app/lib/auditLogger';
 
 type StaffActionBody = {
   staffId?: string;
@@ -45,7 +46,14 @@ const getAdminContext = async (req: NextRequest) => {
     return { error: NextResponse.json({ error: 'Only admins can manage staff accounts.' }, { status: 403 }) };
   }
 
-  return { supabaseAdmin };
+  return {
+    supabaseAdmin,
+    requester: {
+      id: requesterAuth.user.id,
+      email: requesterAuth.user.email || null,
+      role: requesterProfile.role,
+    },
+  };
 };
 
 export async function GET(req: NextRequest) {
@@ -122,7 +130,7 @@ export async function PATCH(req: NextRequest) {
     const context = await getAdminContext(req);
     if ('error' in context) return context.error;
 
-    const { supabaseAdmin } = context;
+    const { supabaseAdmin, requester } = context;
     const body = (await req.json()) as StaffActionBody;
     const staffId = (body.staffId || '').trim();
     const action = body.action;
@@ -144,6 +152,18 @@ export async function PATCH(req: NextRequest) {
       if (error) {
         return NextResponse.json({ error: error.message || 'Failed to reset staff password.' }, { status: 500 });
       }
+
+      await writeAuditLog({
+        actorUserId: requester.id,
+        actorEmail: requester.email,
+        actorRole: requester.role,
+        action: 'Reset staff password',
+        category: 'staff-management',
+        source: 'api:admin:staff-management',
+        targetType: 'staff-user',
+        targetId: staffId,
+        ipAddress: getRequestIp(req),
+      });
 
       return NextResponse.json({ success: true, action });
     }
@@ -190,6 +210,23 @@ export async function PATCH(req: NextRequest) {
 
       const clearedAssignments = Array.isArray(clearedRows) ? clearedRows.length : 0;
 
+      await writeAuditLog({
+        actorUserId: requester.id,
+        actorEmail: requester.email,
+        actorRole: requester.role,
+        action: 'Updated staff profile and reassigned workload',
+        category: 'staff-management',
+        source: 'api:admin:staff-management',
+        targetType: 'staff-user',
+        targetId: staffId,
+        ipAddress: getRequestIp(req),
+        metadata: {
+          firstName,
+          surname,
+          clearedAssignments,
+        },
+      });
+
       return NextResponse.json({ success: true, action, metricsReset: true, clearedAssignments });
     }
 
@@ -202,6 +239,18 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: error.message || 'Failed to disable staff account.' }, { status: 500 });
       }
 
+      await writeAuditLog({
+        actorUserId: requester.id,
+        actorEmail: requester.email,
+        actorRole: requester.role,
+        action: 'Disabled staff account',
+        category: 'staff-management',
+        source: 'api:admin:staff-management',
+        targetType: 'staff-user',
+        targetId: staffId,
+        ipAddress: getRequestIp(req),
+      });
+
       return NextResponse.json({ success: true, action });
     }
 
@@ -213,6 +262,18 @@ export async function PATCH(req: NextRequest) {
       if (error) {
         return NextResponse.json({ error: error.message || 'Failed to enable staff account.' }, { status: 500 });
       }
+
+      await writeAuditLog({
+        actorUserId: requester.id,
+        actorEmail: requester.email,
+        actorRole: requester.role,
+        action: 'Enabled staff account',
+        category: 'staff-management',
+        source: 'api:admin:staff-management',
+        targetType: 'staff-user',
+        targetId: staffId,
+        ipAddress: getRequestIp(req),
+      });
 
       return NextResponse.json({ success: true, action });
     }
@@ -229,7 +290,7 @@ export async function DELETE(req: NextRequest) {
     const context = await getAdminContext(req);
     if ('error' in context) return context.error;
 
-    const { supabaseAdmin } = context;
+    const { supabaseAdmin, requester } = context;
     const { searchParams } = new URL(req.url);
     const staffId = (searchParams.get('staffId') || '').trim();
 
@@ -256,6 +317,18 @@ export async function DELETE(req: NextRequest) {
     if (authDeleteError) {
       return NextResponse.json({ error: authDeleteError.message || 'Failed to delete staff auth account.' }, { status: 500 });
     }
+
+    await writeAuditLog({
+      actorUserId: requester.id,
+      actorEmail: requester.email,
+      actorRole: requester.role,
+      action: 'Deleted staff account',
+      category: 'staff-management',
+      source: 'api:admin:staff-management',
+      targetType: 'staff-user',
+      targetId: staffId,
+      ipAddress: getRequestIp(req),
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

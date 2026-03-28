@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getRequestIp, writeAuditLog } from '@/app/lib/auditLogger';
 
 type CreateStaffBody = {
   firstName?: string;
@@ -104,6 +105,24 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.auth.admin.deleteUser(createdAuth.user.id);
       return NextResponse.json({ error: profileError.message || 'Failed to create staff profile.' }, { status: 500 });
     }
+
+    await writeAuditLog({
+      actorUserId: requesterAuth.user.id,
+      actorEmail: requesterAuth.user.email || null,
+      actorRole: requesterProfile.role,
+      action: `Created staff account for ${email}`,
+      category: 'staff-management',
+      source: 'api:admin:create-staff',
+      targetType: 'staff-user',
+      targetId: createdAuth.user.id,
+      ipAddress: getRequestIp(req),
+      metadata: {
+        firstName,
+        surname,
+        phone,
+        location,
+      },
+    });
 
     return NextResponse.json({ success: true, staffId: createdAuth.user.id, email });
   } catch (error: any) {

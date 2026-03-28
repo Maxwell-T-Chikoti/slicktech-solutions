@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import Image from 'next/image';
 import supabase from '@/app/lib/supabaseClient';
 import AppAlertDialog from '@/app/components/AppAlertDialog';
 import { FaCheck, FaTimes, FaEye, FaSync, FaChartBar, FaDownload, FaSearch, FaClock, FaUsers, FaSmile, FaArrowUp, FaFilePdf, FaBell, FaCheckSquare, FaSquare, FaTrash, FaUser, FaHistory, FaFilter, FaCalendar, FaCog, FaExclamationTriangle, FaMoon, FaSun, FaBars, FaPaperclip, FaThumbtack } from 'react-icons/fa';
@@ -173,6 +174,15 @@ const hasMissingColumnError = (error: unknown, columnName: string) => {
   return message.toLowerCase().includes(columnName.toLowerCase()) && message.toLowerCase().includes('does not exist');
 };
 
+const ADMIN_TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: FaChartBar },
+  { id: 'customers', label: 'Customers', icon: FaUser },
+  { id: 'staff', label: 'Staff', icon: FaUsers },
+  { id: 'activity', label: 'Activity Log', icon: FaHistory },
+  { id: 'reports', label: 'Reports', icon: FaFilePdf },
+  { id: 'services', label: 'Services', icon: FaFilter },
+] as const;
+
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const { theme, toggleTheme } = useTheme();
   const [bookings, setBookings] = useState<BookingWithProfile[]>([]);
@@ -182,6 +192,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [viewAnalytics, setViewAnalytics] = useState<'bookings' | 'revenue' | 'busiest-days' | 'popular-services' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [bookingSort, setBookingSort] = useState<'default' | 'job-id-asc'>('default');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [showMobileTabs, setShowMobileTabs] = useState(false);
@@ -189,7 +200,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [newBookingAlert, setNewBookingAlert] = useState<BookingWithProfile | null>(null);
   const [selectedBookings, setSelectedBookings] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'staff' | 'activity' | 'settings' | 'services'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'customers' | 'staff' | 'activity' | 'reports' | 'settings' | 'services'>('dashboard');
   const [customers, setCustomers] = useState<any[]>([]);
   const [managedStaff, setManagedStaff] = useState<ManagedStaffAccount[]>([]);
   const [loadingManagedStaff, setLoadingManagedStaff] = useState(false);
@@ -197,6 +208,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({});
   const [staffNameDrafts, setStaffNameDrafts] = useState<Record<string, { firstName: string; surname: string }>>({});
   const [selectedStaffDetails, setSelectedStaffDetails] = useState<ManagedStaffAccount | null>(null);
+  const [exportingStaffHistory, setExportingStaffHistory] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [serviceFilter, setServiceFilter] = useState<string>('all');
@@ -953,6 +965,57 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       });
     } catch (error: any) {
       showAlertDialog(error?.message || 'Could not export audit logs.', 'Export failed');
+    }
+  };
+
+  const exportStaffHistory = async () => {
+    try {
+      setExportingStaffHistory(true);
+      const token = await getAdminAuthToken();
+      if (!token) {
+        showAlertDialog('Missing admin session. Please sign in again.', 'Export failed');
+        return;
+      }
+
+      const response = await fetch('/api/admin/audit/staff-history/export?limit=20000&format=xlsx&saveDocument=true', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || 'Staff history export failed');
+      }
+
+      const documentId = response.headers.get('x-staff-history-document-id');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `staff-history-${new Date().toISOString().slice(0, 10)}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      addNotification(
+        documentId
+          ? `Staff history downloaded and archived (document #${documentId}).`
+          : 'Staff history downloaded successfully.',
+        'success'
+      );
+
+      logActivity('Exported staff history audit trail (styled Excel)', {
+        category: 'export',
+        source: 'admin-dashboard',
+        metadata: { limit: 20000, format: 'xlsx', saveDocument: true, documentId },
+      });
+    } catch (error: any) {
+      showAlertDialog(error?.message || 'Could not export staff history.', 'Export failed');
+    } finally {
+      setExportingStaffHistory(false);
     }
   };
 
@@ -1973,10 +2036,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
   // Filter bookings based on search, status, date range, and service
   const filteredBookings = bookings.filter((booking) => {
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase();
     const matchesSearch =
-      booking.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.user_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.service.toLowerCase().includes(searchTerm.toLowerCase());
+      booking.user_name?.toLowerCase().includes(normalizedSearchTerm) ||
+      booking.user_email?.toLowerCase().includes(normalizedSearchTerm) ||
+      booking.service.toLowerCase().includes(normalizedSearchTerm) ||
+      String(booking.id).includes(normalizedSearchTerm.replace('#', ''));
 
     const matchesStatus = filterStatus === 'all' || booking.status === filterStatus;
 
@@ -1987,6 +2052,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
     return matchesSearch && matchesStatus && matchesService && matchesDateRange;
   });
+
+  const sortedFilteredBookings = bookingSort === 'job-id-asc'
+    ? [...filteredBookings].sort((a, b) => a.id - b.id)
+    : filteredBookings;
 
   const formatCAD = (amount: number) =>
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(amount || 0);
@@ -2916,7 +2985,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-slate-950' : 'bg-white'}`}>
       {/* Show analytics screen if viewing one */}
       {viewAnalytics ? (
         <AnalyticsScreen 
@@ -2949,19 +3018,25 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
           <div className="px-6 py-12">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {[...Array(3)].map((_, idx) => (
-                <div key={idx} className="h-28 rounded-2xl border border-slate-200 bg-white/70 animate-pulse" />
+                <div key={idx} className={`h-28 rounded-2xl ${theme === 'dark' ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-white/70'} animate-pulse`} />
               ))}
             </div>
-            <div className="h-96 rounded-2xl border border-slate-200 bg-white/70 animate-pulse" />
+            <div className={`h-96 rounded-2xl ${theme === 'dark' ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-white/70'} animate-pulse`} />
           </div>
         ) : (
           <>
             {/* Header */}
-            <div className="backdrop-blur-xl bg-gradient-to-r from-white/40 to-white/20 border-b border-gray-200 px-6 py-8 sticky top-0 z-20">
+            <div
+              className={`backdrop-blur-xl border-b px-6 py-8 sticky top-0 z-20 lg:pl-[300px] ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-r from-slate-950/95 via-slate-900/92 to-slate-950/95 border-slate-800'
+                  : 'bg-gradient-to-r from-white/40 to-white/20 border-gray-200'
+              }`}
+            >
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h1 className="text-2xl md:text-4xl font-bold text-slate-900">Admin Dashboard</h1>
-                  <p className="text-slate-600 text-sm mt-2">Manage bookings, track revenue, and analyze performance</p>
+                  <p className={`${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'} text-sm mt-2`}>Manage bookings, track revenue, and analyze performance</p>
                 </div>
                 <div className="hidden md:flex items-center space-x-4">
                   {/* Notifications */}
@@ -2979,25 +3054,25 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       )}
                     </button>
                     {showNotifications && (
-                      <div className="absolute right-0 mt-2 w-[90vw] max-w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                        <div className="p-4 border-b border-gray-200">
-                          <h3 className="font-semibold text-slate-900">Notifications</h3>
+                      <div className={`absolute right-0 mt-2 w-[90vw] max-w-80 rounded-lg shadow-lg border z-50 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-4 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-gray-200'}`}>
+                          <h3 className={`font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Notifications</h3>
                         </div>
                         <div className="max-h-64 overflow-y-auto">
                           {notifications.length === 0 ? (
-                            <div className="p-4 text-center text-slate-500">No notifications</div>
+                            <div className={`p-4 text-center ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>No notifications</div>
                           ) : (
                             notifications.map((notification) => (
-                              <div key={notification.id} className={`p-3 border-b border-gray-100 hover:bg-gray-50 flex justify-between items-start`}>
+                              <div key={notification.id} className={`p-3 border-b flex justify-between items-start ${theme === 'dark' ? 'border-slate-700 hover:bg-slate-800' : 'border-gray-100 hover:bg-gray-50'}`}>
                                 <div className="flex-1">
-                                  <p className="text-sm text-slate-800">{notification.message}</p>
-                                  <p className="text-xs text-slate-500 mt-1">
+                                  <p className={`text-sm ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>{notification.message}</p>
+                                  <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'} mt-1`}>
                                     {new Date(notification.timestamp).toLocaleString()}
                                   </p>
                                 </div>
                                 <button
                                   onClick={() => removeNotification(notification.id)}
-                                  className="text-slate-400 hover:text-slate-600 ml-2"
+                                  className={`${theme === 'dark' ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'} ml-2`}
                                 >
                                   ×
                                 </button>
@@ -3017,38 +3092,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <FaSync className={showNotifications ? 'animate-spin' : ''} />
                   </button>
                   <button
-                    onClick={exportToPDF}
-                    className="bg-green-500 hover:bg-green-600 text-white font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-2"
-                    title="Export bookings to PDF"
+                    onClick={() => setActiveTab('reports')}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+                    title="Open reports center"
                   >
-                    <FaFilePdf /> Bookings PDF
-                  </button>
-                  <button
-                    onClick={exportKPIsToPDF}
-                    className="bg-purple-500 hover:bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg transition-all flex items-center gap-2"
-                    title="Export KPIs to PDF"
-                  >
-                    <FaFilePdf /> KPI Report
-                  </button>
-                  <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className="bg-gray-500 hover:bg-gray-600 text-white font-semibold p-2 rounded-full transition-all hover:scale-110"
-                    title="Settings"
-                  >
-                    <FaCog />
-                  </button>
-                  <button
-                    onClick={toggleTheme}
-                    className="bg-slate-600 hover:bg-slate-700 text-white font-semibold p-2 rounded-full transition-all hover:scale-110"
-                    title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-                  >
-                    {theme === 'light' ? <FaMoon /> : <FaSun />}
-                  </button>
-                  <button
-                    onClick={onLogout}
-                    className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-3 px-8 rounded-xl transition-all backdrop-blur-md border border-white/20 hover:border-white/40"
-                  >
-                    Logout
+                    <FaFilePdf /> Reports Center
                   </button>
                 </div>
 
@@ -3083,41 +3131,32 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               </div>
 
               {showMobileActions && (
-                <div className="md:hidden mb-4 rounded-xl bg-white/90 border border-slate-200 p-3 shadow-sm">
+                <div className={`md:hidden mb-4 rounded-xl border p-3 shadow-sm ${theme === 'dark' ? 'bg-slate-900/90 border-slate-700' : 'bg-white/90 border-slate-200'}`}>
                   <div className="grid grid-cols-1 gap-2">
                     <button
                       onClick={() => {
                         fetchBookingsWithProfiles();
                         setShowMobileActions(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-blue-50 text-blue-700 font-semibold"
+                      className={`w-full text-left px-3 py-2 rounded-lg font-semibold ${theme === 'dark' ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-50 text-blue-700'}`}
                     >
                       Refresh Data
                     </button>
                     <button
                       onClick={() => {
-                        exportToPDF();
+                        setActiveTab('reports');
                         setShowMobileActions(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-green-50 text-green-700 font-semibold"
+                      className={`w-full text-left px-3 py-2 rounded-lg font-semibold ${theme === 'dark' ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-700'}`}
                     >
-                      Export Bookings PDF
-                    </button>
-                    <button
-                      onClick={() => {
-                        exportKPIsToPDF();
-                        setShowMobileActions(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-purple-50 text-purple-700 font-semibold"
-                    >
-                      Export KPI Report
+                      Open Reports Center
                     </button>
                     <button
                       onClick={() => {
                         setShowSettings(!showSettings);
                         setShowMobileActions(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold"
+                      className={`w-full text-left px-3 py-2 rounded-lg font-semibold ${theme === 'dark' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-700'}`}
                     >
                       Settings
                     </button>
@@ -3126,13 +3165,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         toggleTheme();
                         setShowMobileActions(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-semibold"
+                      className={`w-full text-left px-3 py-2 rounded-lg font-semibold ${theme === 'dark' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-700'}`}
                     >
                       {theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
                     </button>
                     <button
                       onClick={onLogout}
-                      className="w-full text-left px-3 py-2 rounded-lg bg-red-50 text-red-700 font-semibold"
+                      className={`w-full text-left px-3 py-2 rounded-lg font-semibold ${theme === 'dark' ? 'bg-red-900/50 text-red-300' : 'bg-red-50 text-red-700'}`}
                     >
                       Logout
                     </button>
@@ -3140,53 +3179,24 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 </div>
               )}
 
-              {/* Navigation Tabs */}
-              <div className="hidden md:flex space-x-1 mb-6">
-                {[
-                  { id: 'dashboard', label: 'Dashboard', icon: FaChartBar },
-                  { id: 'customers', label: 'Customers', icon: FaUser },
-                  { id: 'staff', label: 'Staff', icon: FaUsers },
-                  { id: 'activity', label: 'Activity Log', icon: FaHistory },
-                  { id: 'services', label: 'Services', icon: FaFilter },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
-                      activeTab === tab.id
-                        ? 'bg-blue-500 text-white shadow-lg'
-                        : 'bg-white/60 text-slate-700 hover:bg-white/80'
-                    }`}
-                  >
-                    <tab.icon />
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
               <div className="md:hidden mb-4">
                 <button
                   onClick={() => setShowMobileTabs(!showMobileTabs)}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-white/80 border border-slate-200 text-slate-800 font-semibold"
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border font-semibold ${theme === 'dark' ? 'bg-slate-900/80 border-slate-700 text-slate-200' : 'bg-white/80 border-slate-200 text-slate-800'}`}
                 >
                   <span>
                     {activeTab === 'dashboard' && 'Dashboard'}
                     {activeTab === 'customers' && 'Customers'}
                     {activeTab === 'staff' && 'Staff'}
                     {activeTab === 'activity' && 'Activity Log'}
+                    {activeTab === 'reports' && 'Reports'}
                     {activeTab === 'services' && 'Services'}
                   </span>
                   <FaBars />
                 </button>
                 {showMobileTabs && (
-                  <div className="mt-2 rounded-lg bg-white border border-slate-200 p-2 space-y-1">
-                    {[
-                      { id: 'dashboard', label: 'Dashboard' },
-                      { id: 'customers', label: 'Customers' },
-                      { id: 'staff', label: 'Staff' },
-                      { id: 'activity', label: 'Activity Log' },
-                      { id: 'services', label: 'Services' },
-                    ].map((tab) => (
+                  <div className={`mt-2 rounded-lg border p-2 space-y-1 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {ADMIN_TABS.map((tab) => (
                       <button
                         key={tab.id}
                         onClick={() => {
@@ -3194,7 +3204,13 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                           setShowMobileTabs(false);
                         }}
                         className={`w-full text-left px-3 py-2 rounded-md font-medium ${
-                          activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
+                          activeTab === tab.id
+                            ? theme === 'dark'
+                              ? 'bg-blue-900/50 text-blue-300'
+                              : 'bg-blue-50 text-blue-700'
+                            : theme === 'dark'
+                            ? 'text-slate-300 hover:bg-slate-800'
+                            : 'text-slate-700 hover:bg-slate-50'
                         }`}
                       >
                         {tab.label}
@@ -3209,19 +3225,27 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 <>
                   <div className="hidden md:flex gap-4 items-center flex-wrap">
                     <div className="flex-1 relative min-w-64">
-                      <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600" />
+                      <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-600'}`} />
                       <input
                         type="text"
-                        placeholder="Search by client name, email, or service..."
+                        placeholder="Search by job ID, client name, email, or service..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white placeholder-gray-700 text-gray-900 font-medium"
+                        className={`w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                          theme === 'dark'
+                            ? 'bg-slate-800 border-slate-600 text-slate-100 placeholder-slate-500'
+                            : 'bg-white border-gray-300 text-gray-900 placeholder-gray-700'
+                        }`}
                       />
                     </div>
                     <select
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value)}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                        theme === 'dark'
+                          ? 'bg-slate-800 border-slate-600 text-slate-100'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
                     >
                       <option value="all">All Status</option>
                       <option value="Pending">Pending</option>
@@ -3232,26 +3256,50 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     <select
                       value={serviceFilter}
                       onChange={(e) => setServiceFilter(e.target.value)}
-                      className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                        theme === 'dark'
+                          ? 'bg-slate-800 border-slate-600 text-slate-100'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
                     >
                       <option value="all">All Services</option>
                       {getAvailableServices().map(service => (
                         <option key={service} value={service}>{service}</option>
                       ))}
                     </select>
+                    <select
+                      value={bookingSort}
+                      onChange={(e) => setBookingSort(e.target.value as 'default' | 'job-id-asc')}
+                      className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                        theme === 'dark'
+                          ? 'bg-slate-800 border-slate-600 text-slate-100'
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
+                    >
+                      <option value="default">Sort: Latest First</option>
+                      <option value="job-id-asc">Sort: Job ID (Ascending)</option>
+                    </select>
                     <div className="flex gap-2">
                       <input
                         type="date"
                         value={dateRange.start}
                         onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                        className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        className={`px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                          theme === 'dark'
+                            ? 'bg-slate-800 border-slate-600 text-slate-100'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
                         placeholder="Start date"
                       />
                       <input
                         type="date"
                         value={dateRange.end}
                         onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                        className="px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                        className={`px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                          theme === 'dark'
+                            ? 'bg-slate-800 border-slate-600 text-slate-100'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
                         placeholder="End date"
                       />
                     </div>
@@ -3260,18 +3308,26 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   <div className="md:hidden">
                     <div className="flex gap-2">
                       <div className="flex-1 relative">
-                        <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-600" />
+                        <FaSearch className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-600'}`} />
                         <input
                           type="text"
-                          placeholder="Search bookings..."
+                          placeholder="Search bookings or job ID..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white placeholder-gray-700 text-gray-900 font-medium"
+                          className={`w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100 placeholder-slate-500'
+                              : 'bg-white border-gray-300 text-gray-900 placeholder-gray-700'
+                          }`}
                         />
                       </div>
                       <button
                         onClick={() => setShowMobileFilters(!showMobileFilters)}
-                        className="px-3 py-2 rounded-lg bg-white border border-gray-300 text-slate-700"
+                        className={`px-3 py-2 rounded-lg border ${
+                          theme === 'dark'
+                            ? 'bg-slate-800 border-slate-600 text-slate-200'
+                            : 'bg-white border-gray-300 text-slate-700'
+                        }`}
                         title="Toggle filters"
                       >
                         <FaBars />
@@ -3279,11 +3335,15 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                     </div>
 
                     {showMobileFilters && (
-                      <div className="mt-2 space-y-2 rounded-lg bg-white border border-slate-200 p-3">
+                      <div className={`mt-2 space-y-2 rounded-lg border p-3 ${theme === 'dark' ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                         <select
                           value={filterStatus}
                           onChange={(e) => setFilterStatus(e.target.value)}
-                          className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                         >
                           <option value="all">All Status</option>
                           <option value="Pending">Pending</option>
@@ -3294,25 +3354,49 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         <select
                           value={serviceFilter}
                           onChange={(e) => setServiceFilter(e.target.value)}
-                          className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                         >
                           <option value="all">All Services</option>
                           {getAvailableServices().map(service => (
                             <option key={service} value={service}>{service}</option>
                           ))}
                         </select>
+                        <select
+                          value={bookingSort}
+                          onChange={(e) => setBookingSort(e.target.value as 'default' | 'job-id-asc')}
+                          className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
+                        >
+                          <option value="default">Sort: Latest First</option>
+                          <option value="job-id-asc">Sort: Job ID (Ascending)</option>
+                        </select>
                         <input
                           type="date"
                           value={dateRange.start}
                           onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                           placeholder="Start date"
                         />
                         <input
                           type="date"
                           value={dateRange.end}
                           onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                          className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 font-medium"
+                          className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 border-slate-600 text-slate-100'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                           placeholder="End date"
                         />
                       </div>
@@ -3322,70 +3406,161 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               )}
             </div>
 
-            {/* Toast Notifications for Real-time Messages */}
-            {notifications.filter(n => n.type === 'info').length > 0 && (
-              <div className="fixed top-24 right-6 z-40 space-y-2 max-w-md">
-                {notifications.filter(n => n.type === 'info').map((notif) => (
+            <div className="pb-8 lg:pl-[280px]">
+              <div className="grid grid-cols-1 gap-6">
+                <aside className="hidden lg:block fixed inset-y-0 left-0 z-30 w-[260px]">
                   <div
-                    key={notif.id}
-                    className="bg-blue-100 border border-blue-300 text-blue-900 rounded-lg p-4 shadow-lg flex justify-between items-start"
+                    className={`flex h-full flex-col border-r px-3 pb-6 pt-6 backdrop-blur ${
+                      theme === 'dark'
+                        ? 'border-slate-800 bg-slate-950/92'
+                        : 'border-slate-200 bg-white/90'
+                    }`}
                   >
-                    <p className="text-sm font-medium">{notif.message}</p>
-                    <button
-                      onClick={() => removeNotification(notif.id)}
-                      className="ml-4 text-lg hover:opacity-75"
+                    <div
+                      className={`mb-4 rounded-xl border px-3 py-3 ${
+                        theme === 'dark'
+                          ? 'border-slate-700 bg-slate-900/80'
+                          : 'border-slate-300 bg-slate-200/80'
+                      }`}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="flex items-center gap-3">
+                        <div className={`flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg shadow-sm ${theme === 'dark' ? 'bg-slate-800' : 'bg-white'}`}>
+                          <Image src={SlickTechLogo} alt="SlickTech Solutions logo" className="h-12 w-12 object-contain" />
+                        </div>
+                        <div>
+                          <p className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>Company</p>
+                          <p className={`text-sm font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>SlickTech Solutions</p>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="px-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Admin Navigation</p>
+                    <nav className="mt-2 space-y-1" aria-label="Admin dashboard sections">
+                      {ADMIN_TABS.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition-all ${
+                            activeTab === tab.id
+                              ? 'bg-blue-600 text-white shadow'
+                              : theme === 'dark'
+                              ? 'text-slate-300 hover:bg-slate-800/60 hover:text-slate-100'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <tab.icon />
+                          {tab.label}
+                        </button>
+                      ))}
+                    </nav>
 
-            {/* Main Content */}
-            {activeTab === 'dashboard' && (
+                    <div className={`mt-auto border-t pt-4 ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <p className={`px-2 text-xs font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-slate-500' : 'text-slate-500'}`}>Quick Actions</p>
+                      <div className="mt-2 space-y-2">
+                        <button
+                          onClick={() => setShowSettings(!showSettings)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-slate-100'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                          title="Settings"
+                        >
+                          <FaCog />
+                          Settings
+                        </button>
+                        <button
+                          onClick={toggleTheme}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                            theme === 'dark'
+                              ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-slate-100'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                          title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+                        >
+                          {theme === 'light' ? <FaMoon /> : <FaSun />}
+                          {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                        </button>
+                        <button
+                          onClick={onLogout}
+                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                            theme === 'dark'
+                              ? 'bg-red-900/30 text-red-300 hover:bg-red-900/50 hover:text-red-200'
+                              : 'bg-red-50 text-red-700 hover:bg-red-100'
+                          }`}
+                        >
+                          <FaTimes />
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </aside>
+
+                <div className="min-w-0 px-4 md:px-6 lg:px-8">
+                  {/* Toast Notifications for Real-time Messages */}
+                  {notifications.filter(n => n.type === 'info').length > 0 && (
+                    <div className="fixed top-24 right-6 z-40 space-y-2 max-w-md">
+                      {notifications.filter(n => n.type === 'info').map((notif) => (
+                        <div
+                          key={notif.id}
+                          className="bg-blue-100 border border-blue-300 text-blue-900 rounded-lg p-4 shadow-lg flex justify-between items-start"
+                        >
+                          <p className="text-sm font-medium">{notif.message}</p>
+                          <button
+                            onClick={() => removeNotification(notif.id)}
+                            className="ml-4 text-lg hover:opacity-75"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Main Content */}
+                  {activeTab === 'dashboard' && (
               <>
                 {/* Metrics Section */}
                 <div className="px-6 py-12">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-8">📊 Key Performance Indicators</h2>
+                  <h2 className={`text-2xl font-bold mb-8 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>📊 Key Performance Indicators</h2>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                     <div
                       onClick={() => setViewAnalytics('bookings')}
                       className="backdrop-blur-xl bg-gradient-to-br from-blue-400/20 to-blue-600/20 rounded-2xl p-6 border border-blue-200/40 hover:border-blue-300/60 transition-all hover:shadow-2xl hover:shadow-blue-500/20 cursor-pointer hover:scale-105 transform"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Total Bookings</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Total Bookings</p>
                         <FaChartBar className="text-blue-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.totalBookings}</p>
-                      <p className="text-xs text-slate-600 mt-2">All time bookings</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.totalBookings}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>All time bookings</p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-yellow-400/20 to-yellow-600/20 rounded-2xl p-6 border border-yellow-200/40 hover:border-yellow-300/60 transition-all hover:shadow-2xl hover:shadow-yellow-500/20 hover:scale-105 transform">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Pending</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Pending</p>
                         <FaClock className="text-yellow-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.pendingBookings}</p>
-                      <p className="text-xs text-slate-600 mt-2">Awaiting approval</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.pendingBookings}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Awaiting approval</p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-green-400/20 to-green-600/20 rounded-2xl p-6 border border-green-200/40 hover:border-green-300/60 transition-all hover:shadow-2xl hover:shadow-green-500/20 hover:scale-105 transform">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Completed</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Completed</p>
                         <FaCheck className="text-green-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.confirmedBookings}</p>
-                      <p className="text-xs text-slate-600 mt-2">Success rate: {metrics.completionRate}%</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.confirmedBookings}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Success rate: {metrics.completionRate}%</p>
                     </div>
                     <div
                       onClick={() => setViewAnalytics('revenue')}
                       className="backdrop-blur-xl bg-gradient-to-br from-purple-400/20 to-purple-600/20 rounded-2xl p-6 border border-purple-200/40 hover:border-purple-300/60 transition-all hover:shadow-2xl hover:shadow-purple-500/20 cursor-pointer hover:scale-105 transform"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Total Revenue</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Total Revenue</p>
                         <FaArrowUp className="text-purple-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">${metrics.totalRevenue.toFixed(2)}</p>
-                      <p className="text-xs text-slate-600 mt-2">From completed bookings</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>${metrics.totalRevenue.toFixed(2)}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>From completed bookings</p>
                     </div>
                   </div>
 
@@ -3396,53 +3571,53 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       className="backdrop-blur-xl bg-gradient-to-br from-indigo-400/20 to-indigo-600/20 rounded-2xl p-6 border border-indigo-200/40 hover:border-indigo-300/60 transition-all hover:shadow-lg cursor-pointer hover:scale-105 transform"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Busiest Day</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Busiest Day</p>
                         <FaCalendar className="text-indigo-500 text-lg" />
                       </div>
-                      <p className="text-2xl font-bold text-slate-900 mt-3">
+                      <p className={`text-2xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>
                         {Object.entries(metrics.dayOfWeekCounts).reduce((a, b) => 
                           metrics.dayOfWeekCounts[a[0] as keyof typeof metrics.dayOfWeekCounts] > 
                           metrics.dayOfWeekCounts[b[0] as keyof typeof metrics.dayOfWeekCounts] ? a : b
                         )[0]}
                       </p>
-                      <p className="text-xs text-slate-600 mt-2">
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                         {Math.max(...Object.values(metrics.dayOfWeekCounts))} bookings
                       </p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-pink-400/20 to-pink-600/20 rounded-2xl p-6 border border-pink-200/40 hover:shadow-lg transition-all">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Customers</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Customers</p>
                         <FaUsers className="text-pink-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.customerCount}</p>
-                      <p className="text-xs text-slate-600 mt-2">Unique clients</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.customerCount}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Unique clients</p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-cyan-400/20 to-cyan-600/20 rounded-2xl p-6 border border-cyan-200/40 hover:shadow-lg transition-all">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Avg Rating</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Avg Rating</p>
                         <FaSmile className="text-cyan-500 text-lg" />
                       </div>
-                      <p className="text-4xl font-bold text-slate-900 mt-3">{metrics.averageRating}</p>
-                      <p className="text-xs text-slate-600 mt-2">Customer satisfaction</p>
+                      <p className={`text-4xl font-bold mt-3 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.averageRating}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Customer satisfaction</p>
                     </div>
                     <div className="backdrop-blur-xl bg-gradient-to-br from-orange-400/20 to-orange-600/20 rounded-2xl p-6 border border-orange-200/40 hover:shadow-lg transition-all">
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Top Service</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Top Service</p>
                         <FaArrowUp className="text-orange-500 text-lg" />
                       </div>
-                      <p className="text-2xl font-bold text-slate-900 mt-3 truncate">{metrics.topService}</p>
-                      <p className="text-xs text-slate-600 mt-2">Most booked service</p>
+                      <p className={`text-2xl font-bold mt-3 truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.topService}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Most booked service</p>
                     </div>
                     <div
                       onClick={() => setViewAnalytics('popular-services')}
                       className="backdrop-blur-xl bg-gradient-to-br from-teal-400/20 to-teal-600/20 rounded-2xl p-6 border border-teal-200/40 hover:border-teal-300/60 transition-all hover:shadow-lg cursor-pointer hover:scale-105 transform"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-700 text-sm font-semibold">Popular Services</p>
+                        <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>Popular Services</p>
                         <FaChartBar className="text-teal-500 text-lg" />
                       </div>
-                      <p className="text-2xl font-bold text-slate-900 mt-3 truncate">{metrics.topService}</p>
-                      <p className="text-xs text-slate-600 mt-2">Click to view full breakdown</p>
+                      <p className={`text-2xl font-bold mt-3 truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{metrics.topService}</p>
+                      <p className={`text-xs mt-2 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Click to view full breakdown</p>
                     </div>
                   </div>
                 </div>
@@ -3451,42 +3626,42 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 <div className="px-6 pb-12">
                   <h2 className="text-2xl font-bold text-slate-900 mb-8">🧠 AI Demand Prediction</h2>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-6 shadow-lg">
-                      <h3 className="text-lg font-bold text-slate-900 mb-4">Booking Probability Forecast</h3>
+                    <div className={`backdrop-blur-xl rounded-2xl border p-6 shadow-lg ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-white/40 border-gray-200'}`}>
+                      <h3 className={`text-lg font-bold mb-4 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Booking Probability Forecast</h3>
                       {aiDemandLoading && (
-                        <p className="text-xs text-slate-600 mb-3">Refreshing AI forecast...</p>
+                        <p className={`text-xs mb-3 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Refreshing AI forecast...</p>
                       )}
                       {!aiDemandLoading && forecastRowsForDisplay.length === 0 && (
                         <p className="text-xs text-red-600 mb-3">AI forecast unavailable. Fallback is disabled for testing.</p>
                       )}
                       <div className="space-y-3">
                         {forecastRowsForDisplay.slice(0, 7).map((row) => (
-                          <div key={row.day} className="flex items-center justify-between rounded-lg bg-white/70 border border-gray-200 p-3">
+                          <div key={row.day} className={`flex items-center justify-between rounded-lg border p-3 ${theme === 'dark' ? 'bg-slate-700/50 border-slate-600' : 'bg-white/70 border-gray-200'}`}>
                             <div>
-                              <p className="font-semibold text-slate-900">{row.day}</p>
-                              <p className="text-xs text-slate-600">{row.suggestedStaff}</p>
+                              <p className={`font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{row.day}</p>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{row.suggestedStaff}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-slate-900">{row.probability}%</p>
-                              <p className="text-xs text-slate-600">{row.predictedLoad}</p>
+                              <p className={`font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{row.probability}%</p>
+                              <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{row.predictedLoad}</p>
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
 
-                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-6 shadow-lg">
-                      <h3 className="text-lg font-bold text-slate-900 mb-4">Demand Summary</h3>
+                    <div className={`backdrop-blur-xl rounded-2xl border p-6 shadow-lg ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-white/40 border-gray-200'}`}>
+                      <h3 className={`text-lg font-bold mb-4 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>Demand Summary</h3>
                       <div className="space-y-4">
-                        <div className="rounded-lg bg-indigo-50 border border-indigo-200 p-4">
-                          <p className="text-xs font-semibold text-indigo-700 uppercase">Busiest prediction</p>
-                          <p className="text-xl font-bold text-slate-900 mt-1">{busiestPrediction}</p>
+                        <div className={`rounded-lg border p-4 ${theme === 'dark' ? 'bg-indigo-900/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'}`}>
+                          <p className={`text-xs font-semibold uppercase ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-700'}`}>Busiest prediction</p>
+                          <p className={`text-xl font-bold mt-1 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{busiestPrediction}</p>
                         </div>
-                        <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-                          <p className="text-xs font-semibold text-green-700 uppercase">Low demand day</p>
-                          <p className="text-xl font-bold text-slate-900 mt-1">{lowDemandPrediction}</p>
+                        <div className={`rounded-lg border p-4 ${theme === 'dark' ? 'bg-green-900/30 border-green-700' : 'bg-green-50 border-green-200'}`}>
+                          <p className={`text-xs font-semibold uppercase ${theme === 'dark' ? 'text-green-300' : 'text-green-700'}`}>Low demand day</p>
+                          <p className={`text-xl font-bold mt-1 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{lowDemandPrediction}</p>
                         </div>
-                        <p className="text-xs text-slate-600">
+                        <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                           {forecastNote}
                         </p>
                       </div>
@@ -3498,22 +3673,22 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
                 {/* Service Breakdown Section */}
                 <div className="px-6 pb-12">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-8">🎯 Service Performance Breakdown</h2>
-                  <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
+                  <h2 className={`text-2xl font-bold mb-8 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>🎯 Service Performance Breakdown</h2>
+                  <div className={`backdrop-blur-xl rounded-2xl border overflow-hidden shadow-lg ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-white/40 border-gray-200'}`}>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-6">
                       {serviceBreakdown.map((service, idx) => (
-                        <div key={idx} className="backdrop-blur-lg bg-white/60 rounded-xl p-4 border border-gray-200 hover:shadow-lg transition-all">
-                          <h3 className="font-bold text-slate-900 text-sm mb-3 truncate">{service.service}</h3>
+                        <div key={idx} className={`backdrop-blur-lg rounded-xl p-4 border hover:shadow-lg transition-all ${theme === 'dark' ? 'bg-slate-700/50 border-slate-600' : 'bg-white/60 border-gray-200'}`}>
+                          <h3 className={`font-bold text-sm mb-3 truncate ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{service.service}</h3>
                           <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-slate-600">Total Bookings:</span>
-                              <span className="font-bold text-slate-900">{service.count}</span>
+                              <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Total Bookings:</span>
+                              <span className={`font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{service.count}</span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-slate-600">Revenue:</span>
-                              <span className="font-bold text-green-600">${service.revenue.toFixed(2)}</span>
+                              <span className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Revenue:</span>
+                              <span className="font-bold text-green-500">${service.revenue.toFixed(2)}</span>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div className={`w-full rounded-full h-2 mt-2 ${theme === 'dark' ? 'bg-slate-600' : 'bg-gray-200'}`}>
                               <div
                                 className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
                                 style={{width: `${Math.min(100, (service.revenue / (metrics.totalRevenue || 1)) * 100)}%`}}
@@ -3529,10 +3704,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 {/* Bulk Actions Bar */}
                 {selectedBookings.length > 0 && (
                   <div className="px-6 pb-4">
-                    <div className="backdrop-blur-xl bg-yellow-50/80 rounded-2xl border border-yellow-200 p-4">
+                    <div className={`backdrop-blur-xl rounded-2xl border p-4 ${theme === 'dark' ? 'bg-yellow-900/30 border-yellow-700' : 'bg-yellow-50/80 border-yellow-200'}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <span className="font-semibold text-slate-900">
+                          <span className={`font-semibold ${theme === 'dark' ? 'text-yellow-300' : 'text-slate-900'}`}>
                             {selectedBookings.length} booking{selectedBookings.length !== 1 ? 's' : ''} selected
                           </span>
                           <div className="flex gap-2">
@@ -3564,7 +3739,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         </div>
                         <button
                           onClick={() => setSelectedBookings([])}
-                          className="text-slate-600 hover:text-slate-900 text-lg"
+                          className={`text-lg ${theme === 'dark' ? 'text-yellow-300 hover:text-yellow-200' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                           ×
                         </button>
@@ -3576,7 +3751,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                 {/* Bookings Table */}
                 <div className="px-6 pb-12">
                   <div className="flex items-center justify-between mb-8">
-                    <h2 className="text-2xl font-bold text-slate-900">📋 Booking Management</h2>
+                    <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>📋 Booking Management</h2>
                     <div className="flex items-center gap-4">
                       <button
                         onClick={handleSelectAllBookings}
@@ -3585,21 +3760,21 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         {selectedBookings.length === filteredBookings.length && filteredBookings.length > 0 ? <FaCheckSquare /> : <FaSquare />}
                         {selectedBookings.length === filteredBookings.length && filteredBookings.length > 0 ? 'Deselect All' : 'Select All'}
                       </button>
-                      <span className="text-sm text-slate-600 bg-white/60 px-4 py-2 rounded-lg">
+                      <span className={`text-sm px-4 py-2 rounded-lg ${theme === 'dark' ? 'bg-slate-800/60 text-slate-300' : 'bg-white/60 text-slate-600'}`}>
                         Showing {filteredBookings.length} of {bookings.length} bookings
                       </span>
                     </div>
                   </div>
                   {filteredBookings.length === 0 ? (
-                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-12 text-center">
-                      <p className="text-slate-700 text-lg font-semibold">No bookings match your filters.</p>
-                      <p className="mt-2 text-sm text-slate-600">Try clearing filters or selecting a wider date range to see more activity.</p>
+                    <div className={`backdrop-blur-xl rounded-2xl border p-12 text-center ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-white/40 border-gray-200'}`}>
+                      <p className={`text-lg font-semibold ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>No bookings match your filters.</p>
+                      <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Try clearing filters or selecting a wider date range to see more activity.</p>
                     </div>
                   ) : (
-                    <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
+                    <div className={`backdrop-blur-xl rounded-2xl border overflow-hidden shadow-lg ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-white/40 border-gray-200'}`}>
                       <div className="overflow-x-auto">
                         <table className="w-full">
-                          <thead className="bg-white/60 border-b border-gray-200">
+                          <thead className={`border-b ${theme === 'dark' ? 'bg-slate-700/50 border-slate-600' : 'bg-white/60 border-gray-200'}`}>
                             <tr>
                               <th className="px-6 py-4 text-left text-sm font-bold text-slate-900">
                                 <input
@@ -3609,6 +3784,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                                   className="rounded border-gray-300"
                                 />
                               </th>
+                              <th className="px-6 py-4 text-left text-sm font-bold text-slate-900">Job ID</th>
                               <th className="px-6 py-4 text-left text-sm font-bold text-slate-900">Client</th>
                               <th className="px-6 py-4 text-left text-sm font-bold text-slate-900">Service</th>
                               <th className="px-6 py-4 text-left text-sm font-bold text-slate-900">Date & Time</th>
@@ -3618,7 +3794,7 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
-                            {filteredBookings.map((booking) => (
+                            {sortedFilteredBookings.map((booking) => (
                               <tr key={booking.id} className="hover:bg-white/50 transition-colors">
                                 <td className="px-6 py-4">
                                   <input
@@ -3627,6 +3803,11 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                                     onChange={() => handleSelectBooking(booking.id)}
                                     className="rounded border-gray-300"
                                   />
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${theme === 'dark' ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-700'}`}>
+                                    #{booking.id}
+                                  </span>
                                 </td>
                                 <td className="px-6 py-4">
                                   <div>
@@ -3674,31 +3855,31 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
 
             {activeTab === 'customers' && (
               <div className="px-6 py-12">
-                <h2 className="text-2xl font-bold text-slate-900 mb-8">👥 Customer Management</h2>
+                <h2 className={`text-2xl font-bold mb-8 ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>👥 Customer Management</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {customers.map((customer) => (
-                    <div key={customer.id} className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 p-6 hover:shadow-lg transition-all">
+                    <div key={customer.id} className={`backdrop-blur-xl rounded-2xl border p-6 hover:shadow-lg transition-all ${theme === 'dark' ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/60' : 'bg-white/40 border-gray-200 hover:bg-white/60'}`}>
                       <div className="flex items-center gap-4 mb-4">
                         <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
                           {customer.first_name?.[0]}{customer.surname?.[0]}
                         </div>
                         <div>
-                          <h3 className="font-bold text-slate-900">{customer.first_name} {customer.surname}</h3>
-                          <p className="text-sm text-slate-600">{customer.email}</p>
+                          <h3 className={`font-bold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{customer.first_name} {customer.surname}</h3>
+                          <p className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>{customer.email}</p>
                         </div>
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <span className="text-sm text-slate-600">Total Bookings:</span>
-                          <span className="font-semibold text-slate-900">{customer.totalBookings}</span>
+                          <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Total Bookings:</span>
+                          <span className={`font-semibold ${theme === 'dark' ? 'text-slate-100' : 'text-slate-900'}`}>{customer.totalBookings}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sm text-slate-600">Confirmed:</span>
-                          <span className="font-semibold text-green-600">{customer.confirmedBookings}</span>
+                          <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Confirmed:</span>
+                          <span className={`font-semibold ${theme === 'dark' ? 'text-green-400' : 'text-green-600'}`}>{customer.confirmedBookings}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sm text-slate-600">Total Spent:</span>
-                          <span className="font-semibold text-blue-600">${customer.totalSpent.toFixed(2)}</span>
+                          <span className={`text-sm ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>Total Spent:</span>
+                          <span className={`font-semibold ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`}>${customer.totalSpent.toFixed(2)}</span>
                         </div>
                       </div>
                     </div>
@@ -4134,13 +4315,6 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
               <div className="px-6 py-12">
                 <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h2 className="text-2xl font-bold text-slate-900">📝 Activity Log</h2>
-                  <button
-                    onClick={exportAuditLogs}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                  >
-                    <FaDownload className="text-xs" />
-                    Download Audit CSV
-                  </button>
                 </div>
                 <div className="backdrop-blur-xl bg-white/40 rounded-2xl border border-gray-200 overflow-hidden shadow-lg">
                   <div className="max-h-96 overflow-y-auto">
@@ -4169,6 +4343,66 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                         </div>
                       ))
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'reports' && (
+              <div className="px-6 py-12">
+                <div className="mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">📁 Reports Center</h2>
+                  <p className="mt-1 text-sm text-slate-600">Download all operational and audit reports from one place.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">Staff Audit Report</h3>
+                    <p className="mt-1 text-sm text-slate-600">Styled Excel report grouped by staff member, including job history and completion trail.</p>
+                    <button
+                      onClick={exportStaffHistory}
+                      disabled={exportingStaffHistory}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-emerald-300"
+                    >
+                      <FaDownload className="text-xs" />
+                      {exportingStaffHistory ? 'Exporting...' : 'Download Styled Staff Report'}
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">Admin Activity Audit CSV</h3>
+                    <p className="mt-1 text-sm text-slate-600">Export persisted admin activity logs for investigations and compliance checks.</p>
+                    <button
+                      onClick={exportAuditLogs}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      <FaDownload className="text-xs" />
+                      Download Audit CSV
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">Bookings PDF</h3>
+                    <p className="mt-1 text-sm text-slate-600">Download the bookings report in printable PDF format.</p>
+                    <button
+                      onClick={exportToPDF}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                    >
+                      <FaFilePdf className="text-xs" />
+                      Export Bookings PDF
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white/80 p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900">KPI PDF Report</h3>
+                    <p className="mt-1 text-sm text-slate-600">Export KPI summary metrics into a PDF report for management review.</p>
+                    <button
+                      onClick={exportKPIsToPDF}
+                      className="mt-4 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700"
+                    >
+                      <FaFilePdf className="text-xs" />
+                      Export KPI Report
+                    </button>
                   </div>
                 </div>
               </div>
@@ -5040,7 +5274,10 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                   </div>
                 </div>
               </div>
-            )}
+                  )}
+                </div>
+              </div>
+            </div>
           </>
         )}
           </div>
