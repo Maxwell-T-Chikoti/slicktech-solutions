@@ -197,6 +197,7 @@ const ADMIN_TABS = [
   { id: 'activity', label: 'Activity Log', icon: FaHistory },
   { id: 'reports', label: 'Reports', icon: FaFilePdf },
   { id: 'services', label: 'Services', icon: FaFilter },
+  { id: 'settings', label: 'Settings', icon: FaCog },
 ] as const;
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
@@ -312,6 +313,12 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
   const [aiDemandForecast, setAiDemandForecast] = useState<DemandForecastRow[] | null>(null);
   const [aiDemandSummary, setAiDemandSummary] = useState<DemandModelSummary | null>(null);
   const [aiDemandLoading, setAiDemandLoading] = useState(false);
+  // Admin profile management
+  const [adminProfile, setAdminProfile] = useState<any>(null);
+  const [editingAdminProfile, setEditingAdminProfile] = useState(false);
+  const [adminProfileDraft, setAdminProfileDraft] = useState<any>({});
+  const [savingAdminProfile, setSavingAdminProfile] = useState(false);
+  const [adminProfileErrors, setAdminProfileErrors] = useState<Partial<Record<'firstName' | 'surname' | 'email' | 'phone' | 'location', string>>>({});
   const [dialog, setDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -1540,16 +1547,19 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
         return;
       }
 
-      fetchBookingsWithProfiles();
-      fetchCustomers();
-      fetchServices();
-      fetchBlockedDates();
-      fetchStaffMembers();
-      fetchManagedStaff();
-      fetchPromoCodes();
-      fetchStaffUnavailability();
-      fetchChecklistTemplates();
-      fetchActivityLogs();
+      await Promise.all([
+        fetchBookingsWithProfiles(),
+        fetchCustomers(),
+        fetchServices(),
+        fetchBlockedDates(),
+        fetchStaffMembers(),
+        fetchManagedStaff(),
+        fetchPromoCodes(),
+        fetchStaffUnavailability(),
+        fetchChecklistTemplates(),
+        fetchActivityLogs(),
+        fetchAdminProfile(),
+      ]);
       logActivity('Admin logged in', { category: 'auth', source: 'admin-dashboard' });
 
       // Set up real-time subscription for new bookings
@@ -2079,6 +2089,135 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
       'Delete promo code',
       'Delete'
     );
+  };
+
+  const fetchAdminProfile = async () => {
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        console.warn('No user found when fetching admin profile');
+        setAdminProfile({
+          id: '',
+          email: '',
+          first_name: '',
+          surname: '',
+          phone: '',
+          location: '',
+        });
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id, email, first_name, surname, phone, location')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching admin profile:', error);
+        // Set default profile with email from auth
+        setAdminProfile({
+          id: user.id,
+          email: user.email || '',
+          first_name: '',
+          surname: '',
+          phone: '',
+          location: '',
+        });
+        setAdminProfileDraft({
+          id: user.id,
+          email: user.email || '',
+          first_name: '',
+          surname: '',
+          phone: '',
+          location: '',
+        });
+        return;
+      }
+
+      if (profile) {
+        setAdminProfile(profile);
+        setAdminProfileDraft(profile);
+      }
+    } catch (error: any) {
+      console.error('Could not load admin profile:', error);
+      // Set empty profile on error so UI doesn't get stuck in loading state
+      setAdminProfile({
+        id: '',
+        email: '',
+        first_name: '',
+        surname: '',
+        phone: '',
+        location: '',
+      });
+    }
+  };
+
+  const updateAdminProfile = async () => {
+    try {
+      const firstName = adminProfileDraft.first_name?.trim() || '';
+      const surname = adminProfileDraft.surname?.trim() || '';
+      const phone = adminProfileDraft.phone?.trim() || '';
+      const location = adminProfileDraft.location?.trim() || '';
+
+      const nextErrors: Partial<Record<'firstName' | 'surname' | 'email' | 'phone' | 'location', string>> = {};
+
+      if (!firstName) {
+        nextErrors.firstName = 'First name is required.';
+      }
+      if (!surname) {
+        nextErrors.surname = 'Surname is required.';
+      }
+
+      if (Object.keys(nextErrors).length > 0) {
+        setAdminProfileErrors(nextErrors);
+        showAlertDialog('Please fill in all required fields.', 'Validation error');
+        return;
+      }
+
+      setAdminProfileErrors({});
+      setSavingAdminProfile(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('Not authenticated.');
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: firstName,
+          surname: surname,
+          phone: phone || null,
+          location: location || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setAdminProfile(adminProfileDraft);
+      setEditingAdminProfile(false);
+      addNotification('Profile updated successfully', 'success');
+      logActivity('Updated admin profile', {
+        category: 'account',
+        source: 'admin-dashboard',
+        metadata: { firstName, surname },
+      });
+    } catch (error: any) {
+      console.error('Error updating admin profile:', error);
+      showAlertDialog(error?.message || 'Could not update profile.', 'Update failed');
+    } finally {
+      setSavingAdminProfile(false);
+    }
   };
 
   const fetchStaffUnavailability = async () => {
@@ -5752,6 +5891,157 @@ const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
                       Save Settings
                     </button>
                   </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'settings' && (
+              <div className="px-6 py-12">
+                <h2 className="text-2xl font-bold text-slate-900 mb-8">👤 My Profile</h2>
+                
+                {/* Admin Profile Section */}
+                <div className="bg-white/80 p-6 rounded-2xl shadow-lg border border-gray-200">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-xl font-semibold text-slate-900">My Profile</h3>
+                      <p className="text-sm text-slate-600 mt-1">View and update your admin account details</p>
+                    </div>
+                    {!editingAdminProfile && adminProfile && (
+                      <button
+                        onClick={() => setEditingAdminProfile(true)}
+                        className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                      >
+                        <FaCog className="text-sm" />
+                        Edit Profile
+                      </button>
+                    )}
+                  </div>
+
+                  {!adminProfile ? (
+                    <p className="text-slate-500 py-8 text-center">Loading profile...</p>
+                  ) : !editingAdminProfile ? (
+                    // View Mode
+                    <div className="space-y-4">
+                      <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                        <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">Email Address</label>
+                        <p className="text-slate-900 font-medium">{adminProfile.email || 'N/A'}</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">First Name</label>
+                          <p className="text-slate-900 font-medium">{adminProfile.first_name || 'Not set'}</p>
+                        </div>
+
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">Surname</label>
+                          <p className="text-slate-900 font-medium">{adminProfile.surname || 'Not set'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">Phone Number</label>
+                          <p className="text-slate-900 font-medium">{adminProfile.phone || 'Not set'}</p>
+                        </div>
+
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-1">Location</label>
+                          <p className="text-slate-900 font-medium">{adminProfile.location || 'Not set'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    // Edit Mode
+                    <div className="space-y-4">
+                      <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                        <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Email Address <span className="text-red-500">*</span></label>
+                        <input
+                          type="email"
+                          value={adminProfile.email || ''}
+                          disabled
+                          className="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-slate-700 cursor-not-allowed"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Email cannot be changed</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">First Name <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            value={adminProfileDraft.first_name || ''}
+                            onChange={(e) => {
+                              setAdminProfileDraft({...adminProfileDraft, first_name: e.target.value});
+                              setAdminProfileErrors({...adminProfileErrors, firstName: ''});
+                            }}
+                            placeholder="Enter first name"
+                            className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 placeholder-gray-400 ${adminProfileErrors.firstName ? 'border-red-400' : 'border-gray-300'}`}
+                          />
+                          {adminProfileErrors.firstName && <p className="text-xs text-red-600 mt-1">{adminProfileErrors.firstName}</p>}
+                        </div>
+
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Surname <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            value={adminProfileDraft.surname || ''}
+                            onChange={(e) => {
+                              setAdminProfileDraft({...adminProfileDraft, surname: e.target.value});
+                              setAdminProfileErrors({...adminProfileErrors, surname: ''});
+                            }}
+                            placeholder="Enter surname"
+                            className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 placeholder-gray-400 ${adminProfileErrors.surname ? 'border-red-400' : 'border-gray-300'}`}
+                          />
+                          {adminProfileErrors.surname && <p className="text-xs text-red-600 mt-1">{adminProfileErrors.surname}</p>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Phone Number <span className="text-slate-400">(optional)</span></label>
+                          <input
+                            type="tel"
+                            value={adminProfileDraft.phone || ''}
+                            onChange={(e) => setAdminProfileDraft({...adminProfileDraft, phone: e.target.value})}
+                            placeholder="Enter phone number"
+                            className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 placeholder-gray-400"
+                          />
+                        </div>
+
+                        <div className="backdrop-blur-xl bg-white/50 rounded-xl p-4 border border-gray-200">
+                          <label className="block text-xs uppercase tracking-wide text-slate-500 font-semibold mb-2">Location <span className="text-slate-400">(optional)</span></label>
+                          <input
+                            type="text"
+                            value={adminProfileDraft.location || ''}
+                            onChange={(e) => setAdminProfileDraft({...adminProfileDraft, location: e.target.value})}
+                            placeholder="Enter location"
+                            className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-900 placeholder-gray-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-4">
+                        <button
+                          onClick={updateAdminProfile}
+                          disabled={savingAdminProfile}
+                          className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-6 py-2 rounded-lg font-semibold transition"
+                        >
+                          {savingAdminProfile ? 'Saving...' : 'Save Changes'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingAdminProfile(false);
+                            setAdminProfileDraft(adminProfile);
+                            setAdminProfileErrors({});
+                          }}
+                          disabled={savingAdminProfile}
+                          className="flex-1 bg-gray-400 hover:bg-gray-500 text-white px-6 py-2 rounded-lg font-semibold transition"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
