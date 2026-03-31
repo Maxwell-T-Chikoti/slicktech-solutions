@@ -197,7 +197,7 @@ const ADMIN_TABS = [
   { id: 'activity', label: 'Activity Log', icon: FaHistory },
   { id: 'reports', label: 'Reports', icon: FaFilePdf },
   { id: 'services', label: 'Services', icon: FaFilter },
-  { id: 'settings', label: 'Settings', icon: FaCog },
+  { id: 'settings', label: 'Profile', icon: FaCog },
 ] as const;
 
 const AdminDashboard = ({ onLogout }: AdminDashboardProps) => {
